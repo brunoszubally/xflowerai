@@ -5,6 +5,7 @@ from flask_cors import CORS
 import zlib
 import requests
 import logging
+import os
 
 # Flask app létrehozása
 app = Flask(__name__)
