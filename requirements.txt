@@ -1,0 +1,6 @@
+openai
+Flask
+flask-cors
+zlib
+requests
+logging
