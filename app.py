@@ -41,7 +41,7 @@ def generate_plantuml_with_assistant(user_input, user_id):
     openai.beta.threads.messages.create(
         thread_id=thread_id,
         role="user",
-        content=f"Készíts tiszta PlantUML kódot ehhez az üzleti folyamathoz: {user_input}"
+        content=f"{user_input}"
     )
 
     # Indítsuk el az asszisztenst a thread-ben
