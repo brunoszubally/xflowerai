@@ -3,4 +3,3 @@ Flask
 flask-cors
 requests
 Pillow
-ftplib
