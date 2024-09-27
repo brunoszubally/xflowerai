@@ -6,9 +6,6 @@ import zlib
 import requests
 import logging
 import os
-from PIL import Image
-from io import BytesIO
-import ftplib
 
 # Flask app létrehozása
 app = Flask(__name__)
@@ -21,11 +18,6 @@ logger = logging.getLogger(__name__)
 # OpenAI API kulcs és asszisztens azonosító
 openai.api_key = os.getenv("API_KEY")
 assistant_id = os.getenv("ASSISTANT_KEY")
-
-# FTP kapcsolati adatok betöltése
-FTP_SERVER = os.getenv("FTP_SERVER")
-FTP_USER = os.getenv("FTP_USER")
-FTP_PASS = os.getenv("FTP_PASS")
 
 # Tároljuk a thread ID-ket egy globális dictionary-ben
 user_threads = {}
@@ -136,25 +128,6 @@ def compress_and_encode_plantuml(plantuml_code):
     logger.debug(f"PlantUML kód tömörítve és kódolva.")
     return encode64_for_ascii(compressed)
 
-# SVG konvertálása JPG formátumba
-def convert_svg_to_jpg(svg_content, thread_id):
-    image = Image.open(BytesIO(requests.get(svg_content).content))
-    rgb_image = image.convert('RGB')
-    jpg_filename = f"{thread_id}.jpg"
-    rgb_image.save(jpg_filename)
-    return jpg_filename
-
-# Fájl feltöltése az FTP szerverre
-def upload_to_ftp(file_name):
-    try:
-        with ftplib.FTP(FTP_SERVER) as ftp:
-            ftp.login(user=FTP_USER, passwd=FTP_PASS)
-            with open(file_name, "rb") as file:
-                ftp.storbinary(f"STOR {file_name}", file)
-        logger.info(f"Sikeresen feltöltve: {file_name} az FTP szerverre.")
-    except ftplib.all_errors as e:
-        logger.error(f"FTP feltöltési hiba: {e}")
-
 @app.route('/generate', methods=['POST'])
 def generate_diagram():
     data = request.get_json()
@@ -189,11 +162,6 @@ def generate_diagram():
     if response.status_code == 200:
         logger.debug("SVG sikeresen lekérve a PlantUML szerverről.")
         svg_content = response.text
-
-        # SVG konvertálása JPG formátumba és feltöltése az FTP szerverre
-        jpg_filename = convert_svg_to_jpg(svg_content, user_id)
-        upload_to_ftp(jpg_filename)
-
         return jsonify({'svg': svg_content})
     else:
         logger.error(f"Nem sikerült az SVG lekérése a PlantUML szerverről, státusz: {response.status_code}")
@@ -201,4 +169,3 @@ def generate_diagram():
 
 if __name__ == '__main__':
     app.run(debug=True)
-
