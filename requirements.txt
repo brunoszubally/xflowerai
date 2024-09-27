@@ -3,3 +3,4 @@ Flask
 flask-cors
 requests
 Pillow
+cairosvg

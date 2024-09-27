@@ -9,6 +9,8 @@ import os
 from PIL import Image
 from io import BytesIO
 import ftplib
+import cairosvg
+
 
 # Flask app létrehozása
 app = Flask(__name__)
@@ -137,12 +139,25 @@ def compress_and_encode_plantuml(plantuml_code):
     return encode64_for_ascii(compressed)
 
 # SVG konvertálása JPG formátumba
+
 def convert_svg_to_jpg(svg_content, thread_id):
-    image = Image.open(BytesIO(requests.get(svg_content).content))
-    rgb_image = image.convert('RGB')
-    jpg_filename = f"{thread_id}.jpg"
-    rgb_image.save(jpg_filename)
-    return jpg_filename
+    try:
+        # Az SVG tartalmat PNG-re konvertáljuk a cairosvg modullal
+        # SVG tartalom PNG-vé alakítása
+        png_image = cairosvg.svg2png(bytestring=svg_content.encode('utf-8'))
+
+        # PNG konvertálása JPG formátumba
+        image = Image.open(BytesIO(png_image))
+        rgb_image = image.convert('RGB')
+
+        # JPG fájl elmentése
+        jpg_filename = f"{thread_id}.jpg"
+        rgb_image.save(jpg_filename)
+        return jpg_filename
+    except Exception as e:
+        logger.error(f"Hiba történt az SVG JPG-vé alakítása közben: {e}")
+        return None
+
 
 # Fájl feltöltése az FTP szerverre
 def upload_to_ftp(file_name):
