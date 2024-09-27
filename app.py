@@ -10,7 +10,7 @@ from PIL import Image
 from io import BytesIO
 import ftplib
 import cairosvg
-import json  # JSON mentéshez
+import json
 
 # Flask app létrehozása
 app = Flask(__name__)
@@ -33,15 +33,21 @@ FTP_PASS = os.getenv("FTP_PASS")
 user_threads = {}
 
 # OpenAI asszisztens használata a PlantUML generálásához
-def generate_plantuml_with_assistant(user_input):
-    logger.debug(f"PlantUML generálás indítása: {user_input}")
+def generate_plantuml_with_assistant(user_input, user_id):
+    logger.debug(f"PlantUML generálás indítása: {user_input}, user_id: {user_id}")
 
-    # Új thread létrehozása minden új kéréshez
-    thread = openai.beta.threads.create()
-    thread_id = thread.id
-    logger.debug(f"Új thread ID létrehozva: {thread_id}")
+    # Ha a felhasználó már rendelkezik thread ID-val, akkor használjuk azt
+    if user_id in user_threads:
+        thread_id = user_threads[user_id]
+        logger.debug(f"Korábbi thread ID megtalálva: {thread_id}")
+    else:
+        # Ha nincs még thread, létrehozunk egy újat
+        thread = openai.beta.threads.create()
+        thread_id = thread.id
+        user_threads[user_id] = thread_id
+        logger.debug(f"Új thread ID létrehozva: {thread_id}")
 
-    # Küldjük a felhasználói üzenetet a thread-be
+    # Küldjük a felhasználói üzenetet a meglévő thread-be
     openai.beta.threads.messages.create(
         thread_id=thread_id,
         role="user",
@@ -187,8 +193,11 @@ def generate_diagram():
     user_message = data['message']
     logger.debug(f"Üzenet fogadva: {user_message}")
 
+    # Felhasználói azonosító lekérése (thread ID használata)
+    user_id = request.remote_addr  # IP helyett inkább az egyedi thread ID-t használnánk, de marad az IP
+
     # PlantUML kód generálása az OpenAI asszisztenssel
-    thread_id, plantuml_code = generate_plantuml_with_assistant(user_message)
+    thread_id, plantuml_code = generate_plantuml_with_assistant(user_message, user_id)
 
     if plantuml_code is None:
         logger.error("Nem sikerült PlantUML kódot generálni.")
