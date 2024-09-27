@@ -10,7 +10,7 @@ from PIL import Image
 from io import BytesIO
 import ftplib
 import cairosvg
-
+import json  # JSON mentéshez
 
 # Flask app létrehozása
 app = Flask(__name__)
@@ -33,25 +33,19 @@ FTP_PASS = os.getenv("FTP_PASS")
 user_threads = {}
 
 # OpenAI asszisztens használata a PlantUML generálásához
-def generate_plantuml_with_assistant(user_input, user_id):
-    logger.debug(f"PlantUML generálás indítása: {user_input}, user_id: {user_id}")
+def generate_plantuml_with_assistant(user_input):
+    logger.debug(f"PlantUML generálás indítása: {user_input}")
 
-    # Ha a felhasználó már rendelkezik thread ID-val, akkor használjuk azt
-    if user_id in user_threads:
-        thread_id = user_threads[user_id]
-        logger.debug(f"Korábbi thread ID megtalálva: {thread_id}")
-    else:
-        # Ha nincs még thread, létrehozunk egy újat
-        thread = openai.beta.threads.create()
-        thread_id = thread.id
-        user_threads[user_id] = thread_id
-        logger.debug(f"Új thread ID létrehozva: {thread_id}")
+    # Új thread létrehozása minden új kéréshez
+    thread = openai.beta.threads.create()
+    thread_id = thread.id
+    logger.debug(f"Új thread ID létrehozva: {thread_id}")
 
-    # Küldjük a felhasználói üzenetet a meglévő thread-be
+    # Küldjük a felhasználói üzenetet a thread-be
     openai.beta.threads.messages.create(
         thread_id=thread_id,
         role="user",
-        content=f"Create PlantUML Activity diagram code for this business process, ensuring the code strictly follows PlantUML syntax.   Only return the PlantUML code, which should include extra notes for steps. The output should be in Hungarian, and return nothing else but the PlantUML code. (with the notes of course, note left and note right).  Don't use swimlanes! Always remember and modify based on previous processes in one conversation!{user_input}"
+        content=f"Create PlantUML Activity diagram code for this business process, ensuring the code strictly follows PlantUML syntax. Only return the PlantUML code, which should include extra notes for steps. The output should be in Hungarian, and return nothing else but the PlantUML code. (with the notes of course, note left and note right). Don't use swimlanes! Always remember and modify based on previous processes in one conversation!{user_input}"
     )
 
     # Indítsuk el az asszisztenst a thread-ben
@@ -88,10 +82,10 @@ def generate_plantuml_with_assistant(user_input, user_id):
         )
         logger.debug(f"PlantUML kód tisztítva: {cleaned_response}")
 
-        return cleaned_response
+        return thread_id, cleaned_response
 
     logger.error(f"Nem sikerült asszisztens válaszát lekérni.")
-    return None
+    return None, None
 
 # Funkció a futás státuszának ellenőrzésére
 def check_status(run_id, thread_id):
@@ -138,26 +132,26 @@ def compress_and_encode_plantuml(plantuml_code):
     logger.debug(f"PlantUML kód tömörítve és kódolva.")
     return encode64_for_ascii(compressed)
 
-# SVG konvertálása JPG formátumba
-
+# SVG konvertálása JPG formátumba 300 dpi-vel és fehér háttérrel
 def convert_svg_to_jpg(svg_content, thread_id):
     try:
-        # Az SVG tartalmat PNG-re konvertáljuk a cairosvg modullal
-        # SVG tartalom PNG-vé alakítása
-        png_image = cairosvg.svg2png(bytestring=svg_content.encode('utf-8'))
+        # Az SVG tartalmat PNG-vé konvertáljuk a cairosvg modullal 300 dpi felbontással
+        png_image = cairosvg.svg2png(bytestring=svg_content.encode('utf-8'), dpi=300)
 
         # PNG konvertálása JPG formátumba
         image = Image.open(BytesIO(png_image))
-        rgb_image = image.convert('RGB')
+        
+        # Fehér háttér hozzáadása
+        rgb_image = Image.new("RGB", image.size, (255, 255, 255))  # Fehér háttér
+        rgb_image.paste(image, mask=image.split()[3])  # Maszkolás, hogy átlátszó részek fehérek legyenek
 
-        # JPG fájl elmentése
+        # JPG fájl elmentése a thread ID-vel és 300 dpi-vel
         jpg_filename = f"{thread_id}.jpg"
-        rgb_image.save(jpg_filename)
+        rgb_image.save(jpg_filename, dpi=(300, 300))
         return jpg_filename
     except Exception as e:
         logger.error(f"Hiba történt az SVG JPG-vé alakítása közben: {e}")
         return None
-
 
 # Fájl feltöltése az FTP szerverre
 def upload_to_ftp(file_name):
@@ -170,6 +164,18 @@ def upload_to_ftp(file_name):
     except ftplib.all_errors as e:
         logger.error(f"FTP feltöltési hiba: {e}")
 
+# JSON fájl mentése a thread ID alapján
+def save_process_as_json(thread_id, process_data):
+    try:
+        json_filename = f"{thread_id}.json"
+        with open(json_filename, "w", encoding="utf-8") as json_file:
+            json.dump(process_data, json_file, ensure_ascii=False, indent=4)
+        logger.info(f"Folyamat mentve JSON fájlba: {json_filename}")
+        return json_filename
+    except Exception as e:
+        logger.error(f"Hiba történt a JSON fájl mentése közben: {e}")
+        return None
+
 @app.route('/generate', methods=['POST'])
 def generate_diagram():
     data = request.get_json()
@@ -181,12 +187,8 @@ def generate_diagram():
     user_message = data['message']
     logger.debug(f"Üzenet fogadva: {user_message}")
 
-    # Felhasználói azonosító lekérése (itt pl. az IP-címet használjuk az egyszerűség kedvéért)
-    user_id = request.remote_addr
-    logger.debug(f"Felhasználói azonosító: {user_id}")
-
     # PlantUML kód generálása az OpenAI asszisztenssel
-    plantuml_code = generate_plantuml_with_assistant(user_message, user_id)
+    thread_id, plantuml_code = generate_plantuml_with_assistant(user_message)
 
     if plantuml_code is None:
         logger.error("Nem sikerült PlantUML kódot generálni.")
@@ -206,8 +208,18 @@ def generate_diagram():
         svg_content = response.text
 
         # SVG konvertálása JPG formátumba és feltöltése az FTP szerverre
-        jpg_filename = convert_svg_to_jpg(svg_content, user_id)
+        jpg_filename = convert_svg_to_jpg(svg_content, thread_id)
         upload_to_ftp(jpg_filename)
+
+        # A folyamat mentése JSON fájlba
+        process_data = {
+            "user_message": user_message,
+            "plantuml_code": plantuml_code,
+            "svg_content": svg_content
+        }
+        json_filename = save_process_as_json(thread_id, process_data)
+        if json_filename:
+            upload_to_ftp(json_filename)
 
         return jsonify({'svg': svg_content})
     else:
@@ -216,4 +228,3 @@ def generate_diagram():
 
 if __name__ == '__main__':
     app.run(debug=True)
-
