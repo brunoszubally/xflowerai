@@ -17,7 +17,7 @@ from email.mime.image import MIMEImage
 from threading import Lock
 from dotenv import load_dotenv
 
-# Környezeti változók betöltése
+# Környezeti változók betöltéses
 load_dotenv()
 
 app = Flask(__name__)
