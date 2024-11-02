@@ -142,8 +142,7 @@ def create_a4_image(image_data, recipient_name):
 
     # Cím hozzáadása
     try:
-        font_path = os.path.join(os.path.dirname(__file__), 'fonts', 'Montserrat-Bold.ttf')
-        font = ImageFont.truetype(font_path, size=int(A4_WIDTH * 0.02))
+        font = ImageFont.truetype('Montserrat-Bold.ttf', size=int(A4_WIDTH * 0.02))
     except Exception as e:
         logger.warning(f"Nem sikerült a Montserrat betöltése: {e}")
         font = ImageFont.load_default()
