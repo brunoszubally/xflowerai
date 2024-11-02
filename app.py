@@ -310,6 +310,29 @@ https://xflower.hu
     except Exception as e:
         logger.error(f"Hiba az e-mail küldése során: {str(e)}")
         return jsonify({'error': str(e)}), 500
+    
+@app.route('/network-test')
+def network_test():
+    import socket
+    import requests
+    results = {}
+
+    # DNS feloldás tesztelése
+    try:
+        ip = socket.gethostbyname('api.openai.com')
+        results['dns_resolution'] = f"Az api.openai.com IP címe: {ip}"
+    except socket.gaierror as e:
+        results['dns_resolution'] = f"DNS feloldási hiba: {e}"
+
+    # HTTPS kérés tesztelése
+    try:
+        response = requests.get('https://api.openai.com/v1')
+        results['http_request'] = f"HTTP válasz kód: {response.status_code}"
+    except requests.exceptions.RequestException as e:
+        results['http_request'] = f"HTTP kérés hiba: {e}"
+
+    return jsonify(results)
+
 
 if __name__ == '__main__':
     app.run(debug=True)
