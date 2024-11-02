@@ -106,7 +106,9 @@ def check_status(run_id, thread_id):
     return run.status
 
 def compress_and_encode_plantuml(plantuml_code):
-    compressed = zlib.compress(plantuml_code.encode('utf-8'))
+    compressor = zlib.compressobj(level=9, wbits=-zlib.MAX_WBITS)
+    compressed = compressor.compress(plantuml_code.encode('utf-8'))
+    compressed += compressor.flush()
     return encode64_for_ascii(compressed)
 
 def encode64_for_ascii(bytes_data):
