@@ -30,6 +30,8 @@ SMTP_USER = os.getenv("SMTP_USER")
 SMTP_PASS = os.getenv("SMTP_PASS")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ASSISTANT_ID = os.getenv("ASSISTANT_ID")
+ASSISTANT_ID = os.getenv("ASSISTANT_ID")
+BCC_EMAIL = os.getenv("BCC_EMAIL")
 
 # OpenAI beállítások
 openai.api_key = OPENAI_API_KEY
@@ -272,17 +274,18 @@ def send_email():
         msg['Subject'] = "Folyamatábra az xFLOWer.ai-tól"
         
         # **BCC** címzett hozzáadása
-        msg['Bcc'] = 'brunoszubally@gmail.com'
+        msg['Bcc'] = BCC_EMAIL
 
         # Plain Text formátumú törzs
         text_body = f"""
 Kedves {recipient_name}!
 
-Köszönjük, hogy az xFLOWer.ai-t használtad a folyamatábra elkészítéséhez.
+Köszönjük, hogy az xFLOWer.ai-t használtad a folyamatábra elkészítéséhez, melyet ezen e-mail csatolmányaként küldtünk el most Neked.
+
 
 Üdvözlettel,
-Az xFLOWer.ai csapata
-pip
+Click On Hungary
+
 ----------------------------------------
 © 2024 xFLOWer.ai. Minden jog fenntartva.
 https://xflower.hu
