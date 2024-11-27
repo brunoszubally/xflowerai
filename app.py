@@ -267,37 +267,90 @@ def send_email():
         a4_image.save(output, format='JPEG', quality=95, dpi=(300, 300))
         output.seek(0)
 
-        # E-mail összeállítása és küldése
-        msg = MIMEMultipart()
+        msg = MIMEMultipart('alternative')
         msg['From'] = SMTP_USER
         msg['To'] = recipient_email
         msg['Subject'] = "Folyamatábra az xFLOWer.ai-tól"
-        
-        # **BCC** címzett hozzáadása
         msg['Bcc'] = BCC_EMAIL
 
-        # Plain Text formátumú törzs
-        text_body = f"""
+        # Plain text verzió
+        text = f"""
 Kedves {recipient_name}!
 
 Köszönjük, hogy az xFLOWer.ai-t használtad a folyamatábra elkészítéséhez, melyet ezen e-mail csatolmányaként küldtünk el most Neked.
 
+Az xFLOWer workflow platformmal villámgyorsan tudunk Neked működő, testreszabott folyamatokat létrehozni. Legyen szó bármilyen üzleti folyamatról, mi segítünk azt hatékonyan digitalizálni és automatizálni.
+
+Ha szeretnéd megtapasztalni, hogyan teheted még gördülékenyebbé vállalkozásod működését, vedd fel velünk a kapcsolatot:
+
++36 1 469 0001
+sales@xflower.hu
+
+Várjuk megkeresésed!
 
 Üdvözlettel,
-Click On Hungary
+Az xFLOWer csapata
 
-----------------------------------------
 © 2024 xFLOWer.ai. Minden jog fenntartva.
 https://xflower.hu
 """
 
-        # MIMEText objektum létrehozása csak plain text részt
-        part1 = MIMEText(text_body, 'plain', 'utf-8')
+        # HTML verzió
+        html = f"""
+<html>
+<head>
+    <style>
+        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+        .footer {{ margin-top: 20px; font-size: 12px; color: #777; text-align: center; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <p>Kedves {recipient_name}!</p>
+        
+        <p>Köszönjük, hogy az xFLOWer.ai-t használtad a folyamatábra elkészítéséhez, melyet ezen e-mail csatolmányaként küldtünk el most Neked.</p>
+        
+        <p>Az <strong>xFLOWer workflow platformmal</strong> villámgyorsan tudunk Neked működő, testreszabott folyamatokat létrehozni. Legyen szó bármilyen üzleti folyamatról, mi segítünk azt hatékonyan digitalizálni és automatizálni.</p>
+        
+        <p>Ha szeretnéd megtapasztalni, hogyan teheted még gördülékenyebbé vállalkozásod működését, vedd fel velünk a kapcsolatot:</p>
+        
+        <p>
+            <img src="cid:phone_icon" alt="Phone" style="vertical-align: middle; margin-right: 10px;"> +36 1 469 0001<br>
+            <img src="cid:email_icon" alt="Email" style="vertical-align: middle; margin-right: 10px;"> <a href="mailto:sales@xflower.hu">sales@xflower.hu</a>
+        </p>
+        
+        <p>Várjuk megkeresésed!</p>
+        
+        <p>Üdvözlettel,<br>Az xFLOWer csapata</p>
+        
+        <div class="footer">
+            © 2024 xFLOWer.ai. Minden jog fenntartva.<br>
+            <a href="https://xflower.hu">https://xflower.hu</a>
+        </div>
+    </div>
+</body>
+</html>
+"""
 
-        # Csak a plain text részt csatoljuk
+        part1 = MIMEText(text, 'plain')
+        part2 = MIMEText(html, 'html')
+
         msg.attach(part1)
+        msg.attach(part2)
 
-        # Kép csatolása
+        # Ikonok hozzáadása
+        with open('phone_icon.png', 'rb') as f:
+            phone_icon = MIMEImage(f.read())
+            phone_icon.add_header('Content-ID', '<phone_icon>')
+            msg.attach(phone_icon)
+
+        with open('email_icon.png', 'rb') as f:
+            email_icon = MIMEImage(f.read())
+            email_icon.add_header('Content-ID', '<email_icon>')
+            msg.attach(email_icon)
+
+        # Folyamatábra csatolása
         image_attachment = MIMEImage(output.getvalue())
         image_attachment.add_header('Content-Disposition', 'attachment', filename='xflower_folyamatabra.jpg')
         msg.attach(image_attachment)
