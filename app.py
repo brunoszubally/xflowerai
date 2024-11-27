@@ -273,52 +273,36 @@ def send_email():
         msg['Subject'] = "Folyamatábra az xFLOWer.ai-tól"
         msg['Bcc'] = BCC_EMAIL
 
-        # Plain text verzió
-        text = f"""
-Kedves {recipient_name}!
-
-Köszönjük, hogy az xFLOWer.ai-t használtad a folyamatábra elkészítéséhez, melyet ezen e-mail csatolmányaként küldtünk el most Neked.
-
-Az xFLOWer workflow platformmal villámgyorsan tudunk Neked működő, testreszabott folyamatokat létrehozni. Legyen szó bármilyen üzleti folyamatról, mi segítünk azt hatékonyan digitalizálni és automatizálni.
-
-Ha szeretnéd megtapasztalni, hogyan teheted még gördülékenyebbé vállalkozásod működését, vedd fel velünk a kapcsolatot:
-
-+36 1 469 0001
-sales@xflower.hu
-
-Várjuk megkeresésed!
-
-Üdvözlettel,
-Az xFLOWer csapata
-
-© 2024 xFLOWer.ai. Minden jog fenntartva.
-https://xflower.hu
-"""
-
         # HTML verzió
         html = f"""
 <html>
 <head>
     <style>
-        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; background-color: #f4f4f4; }}
+        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }}
+        h1 {{ color: #b42325; }}
+        .cta {{ background-color: #b42325; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 3px; display: inline-block; }}
         .footer {{ margin-top: 20px; font-size: 12px; color: #777; text-align: center; }}
     </style>
 </head>
 <body>
     <div class="container">
+        <h1>Köszönjük, hogy az xFLOWer.ai-t használtad!</h1>
+        
         <p>Kedves {recipient_name}!</p>
         
-        <p>Köszönjük, hogy az xFLOWer.ai-t használtad a folyamatábra elkészítéséhez, melyet ezen e-mail csatolmányaként küldtünk el most Neked.</p>
+        <p>Örömmel értesítünk, hogy a folyamatábrád elkészült, melyet ezen e-mail csatolmányaként küldünk el Neked.</p>
         
         <p>Az <strong>xFLOWer workflow platformmal</strong> villámgyorsan tudunk Neked működő, testreszabott folyamatokat létrehozni. Legyen szó bármilyen üzleti folyamatról, mi segítünk azt hatékonyan digitalizálni és automatizálni.</p>
         
         <p>Ha szeretnéd megtapasztalni, hogyan teheted még gördülékenyebbé vállalkozásod működését, vedd fel velünk a kapcsolatot:</p>
         
         <p>
-            <img src="cid:phone_icon" alt="Phone" style="vertical-align: middle; margin-right: 10px;"> +36 1 469 0001<br>
-            <img src="cid:email_icon" alt="Email" style="vertical-align: middle; margin-right: 10px;"> <a href="mailto:sales@xflower.hu">sales@xflower.hu</a>
+            Telefon: <strong>+36 1 469 0001</strong><br>
+            E-mail: <a href="mailto:sales@xflower.hu">sales@xflower.hu</a>
         </p>
+        
+        <p><a href="https://xflower.hu" class="cta">Látogass el weboldalunkra</a></p>
         
         <p>Várjuk megkeresésed!</p>
         
@@ -333,22 +317,33 @@ https://xflower.hu
 </html>
 """
 
+        # Plain text verzió
+        text = f"""
+Kedves {recipient_name}!
+
+Köszönjük, hogy az xFLOWer.ai-t használtad a folyamatábra elkészítéséhez, melyet ezen e-mail csatolmányaként küldtünk el most Neked.
+
+Az xFLOWer workflow platformmal villámgyorsan tudunk Neked működő, testreszabott folyamatokat létrehozni. Legyen szó bármilyen üzleti folyamatról, mi segítünk azt hatékonyan digitalizálni és automatizálni.
+
+Ha szeretnéd megtapasztalni, hogyan teheted még gördülékenyebbé vállalkozásod működését, vedd fel velünk a kapcsolatot:
+
+Telefon: +36 1 469 0001
+E-mail: sales@xflower.hu
+
+Várjuk megkeresésed!
+
+Üdvözlettel,
+Az xFLOWer csapata
+
+© 2024 xFLOWer.ai. Minden jog fenntartva.
+https://xflower.hu
+"""
+
         part1 = MIMEText(text, 'plain')
         part2 = MIMEText(html, 'html')
 
         msg.attach(part1)
         msg.attach(part2)
-
-        # Ikonok hozzáadása
-        with open('phone_icon.png', 'rb') as f:
-            phone_icon = MIMEImage(f.read())
-            phone_icon.add_header('Content-ID', '<phone_icon>')
-            msg.attach(phone_icon)
-
-        with open('email_icon.png', 'rb') as f:
-            email_icon = MIMEImage(f.read())
-            email_icon.add_header('Content-ID', '<email_icon>')
-            msg.attach(email_icon)
 
         # Folyamatábra csatolása
         image_attachment = MIMEImage(output.getvalue())
