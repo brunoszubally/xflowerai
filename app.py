@@ -16,6 +16,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.image import MIMEImage
 from threading import Lock
 from dotenv import load_dotenv
+from datetime import datetime, timedelta
 
 # Környezeti változók betöltéses
 load_dotenv()
@@ -44,9 +45,48 @@ logger = logging.getLogger(__name__)
 A4_WIDTH = int(297 * 11.811)  # 297mm * (300/25.4)
 A4_HEIGHT = int(210 * 11.811)  # 210mm * (300/25.4)
 
-# Thread tárolás
-user_threads = {}
+# Thread tárolás módosítása - hozzáadjunk időbélyeget és cleanup funkciót
+user_threads = {
+    # 'user_id': {'thread_id': 'xxx', 'last_used': datetime}
+}
 thread_lock = Lock()
+
+# Konstans a thread élettartamához
+THREAD_LIFETIME_HOURS = 24
+
+def cleanup_old_threads():
+    """Régi thread-ek törlése"""
+    current_time = datetime.now()
+    with thread_lock:
+        for user_id in list(user_threads.keys()):
+            if current_time - user_threads[user_id]['last_used'] > timedelta(hours=THREAD_LIFETIME_HOURS):
+                try:
+                    # OpenAI thread törlése
+                    openai.beta.threads.delete(user_threads[user_id]['thread_id'])
+                    logger.info(f"Thread törölve: {user_threads[user_id]['thread_id']} (user_id: {user_id})")
+                except Exception as e:
+                    logger.error(f"Hiba a thread törlésekor: {str(e)}")
+                del user_threads[user_id]
+
+def get_or_create_thread(user_id):
+    """Thread kezelése egy felhasználóhoz"""
+    with thread_lock:
+        if user_id in user_threads:
+            thread_data = user_threads[user_id]
+            # Frissítjük az utolsó használat időpontját
+            thread_data['last_used'] = datetime.now()
+            return thread_data['thread_id']
+        else:
+            try:
+                thread = openai.beta.threads.create()
+                user_threads[user_id] = {
+                    'thread_id': thread.id,
+                    'last_used': datetime.now()
+                }
+                return thread.id
+            except Exception as e:
+                logger.error(f"Hiba új thread létrehozásakor: {str(e)}")
+                return None
 
 @app.before_request
 def before_request():
@@ -60,15 +100,15 @@ def before_request():
 def generate_plantuml_with_assistant(user_input, user_id):
     logger.debug(f"PlantUML generálás indítása: {user_input}, user_id: {user_id}")
 
-    with thread_lock:
-        thread_id = user_threads.get(user_id)
-        if not thread_id:
-            thread = openai.beta.threads.create()
-            thread_id = thread.id
-            user_threads[user_id] = thread_id
-            logger.debug(f"Új thread ID létrehozva: {thread_id}")
+    # Cleanup indítása
+    cleanup_old_threads()
 
-    max_attempts = 3  # Maximum próbálkozások száma
+    # Thread kezelés
+    thread_id = get_or_create_thread(user_id)
+    if not thread_id:
+        return None, None
+
+    max_attempts = 3
     attempt = 0
     
     while attempt < max_attempts:
