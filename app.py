@@ -68,37 +68,57 @@ def generate_plantuml_with_assistant(user_input, user_id):
             user_threads[user_id] = thread_id
             logger.debug(f"Új thread ID létrehozva: {thread_id}")
 
-    openai.beta.threads.messages.create(
-        thread_id=thread_id,
-        role="user",
-        content=f"Create PlantUML Activity diagram code for this business process, ensuring the code strictly follows PlantUML syntax.   Only return the PlantUML code, which should include extra notes for steps. The output should be in in the input language, and return nothing else but the PlantUML code. (with the notes of course, note left and note right).  Don't use swimlanes! Always remember and modify based on previous processes in one conversation! ALWAYS GIVE THE SAME LANGUAGE AS THE USERS INPUT! User input:{user_input}"
-    )
-
-    run = openai.beta.threads.runs.create(
-        thread_id=thread_id,
-        assistant_id=ASSISTANT_ID,
-    )
-
-    status = check_status(run.id, thread_id)
-    while status != "completed":
-        logger.debug(f"Várakozás a futás befejezésére, jelenlegi státusz: {status}")
-        status = check_status(run.id, thread_id)
-        time.sleep(2)
-
-    response = openai.beta.threads.messages.list(thread_id=thread_id)
+    max_attempts = 3  # Maximum próbálkozások száma
+    attempt = 0
     
-    if not response.data:
-        logger.error("Nem sikerült asszisztens válaszát lekérni.")
-        return None, None
+    while attempt < max_attempts:
+        try:
+            openai.beta.threads.messages.create(
+                thread_id=thread_id,
+                role="user",
+                content=f"Create PlantUML Activity diagram code for this business process, ensuring the code strictly follows PlantUML syntax.   Only return the PlantUML code, which should include extra notes for steps. The output should be in in the input language, and return nothing else but the PlantUML code. (with the notes of course, note left and note right).  Don't use swimlanes! Always remember and modify based on previous processes in one conversation! ALWAYS GIVE THE SAME LANGUAGE AS THE USERS INPUT! User input:{user_input}"
+            )
 
-    assistant_response = response.data[0].content[0].text.value
-    cleaned_response = assistant_response.replace("```plantuml", "").rstrip("`").strip()
-    cleaned_response = cleaned_response.replace(
-        '@startuml',
-        '@startuml\nskinparam ConditionEndStyle hline\nskinparam defaultFontName Montserrat'
-    )
+            run = openai.beta.threads.runs.create(
+                thread_id=thread_id,
+                assistant_id=ASSISTANT_ID,
+            )
 
-    return thread_id, cleaned_response
+            status = check_status(run.id, thread_id)
+            while status != "completed":
+                logger.debug(f"Várakozás a futás befejezésére, jelenlegi státusz: {status}")
+                status = check_status(run.id, thread_id)
+                time.sleep(2)
+
+            response = openai.beta.threads.messages.list(thread_id=thread_id)
+            
+            if not response.data:
+                logger.error("Nem sikerült asszisztens válaszát lekérni.")
+                attempt += 1
+                continue
+
+            assistant_response = response.data[0].content[0].text.value
+            
+            # Ellenőrizzük, hogy tartalmazza-e az @enduml részt
+            if "@enduml" not in assistant_response:
+                logger.warning("Hiányzó @enduml a válaszból, újrapróbálkozás...")
+                attempt += 1
+                continue
+
+            cleaned_response = assistant_response.replace("```plantuml", "").rstrip("`").strip()
+            cleaned_response = cleaned_response.replace(
+                '@startuml',
+                '@startuml\nskinparam ConditionEndStyle hline\nskinparam defaultFontName Montserrat'
+            )
+
+            return thread_id, cleaned_response
+
+        except Exception as e:
+            logger.error(f"Hiba történt a PlantUML generálás során: {str(e)}")
+            attempt += 1
+            time.sleep(2)  # Várunk 2 másodpercet újrapróbálkozás előtt
+
+    return None, None
 
 def check_status(run_id, thread_id):
     run = openai.beta.threads.runs.retrieve(
@@ -214,35 +234,57 @@ def generate_diagram():
         user_message = data['message']
         user_id = request.remote_addr
 
-        thread_id, plantuml_code = generate_plantuml_with_assistant(user_message, user_id)
-        if not plantuml_code:
-            return jsonify({'error': 'Nem sikerült PlantUML kódot generálni.'}), 500
+        max_attempts = 3  # Maximum próbálkozások száma az SVG generálásra
+        attempt = 0
 
-        encoded_uml = compress_and_encode_plantuml(plantuml_code)
-        plantuml_url = f"http://www.plantuml.com/plantuml/svg/~1{encoded_uml}"
-        
-        response = requests.get(plantuml_url)
-        if response.status_code != 200:
-            return jsonify({'error': 'Nem sikerült az SVG lekérése.'}), 500
+        while attempt < max_attempts:
+            thread_id, plantuml_code = generate_plantuml_with_assistant(user_message, user_id)
+            if not plantuml_code:
+                attempt += 1
+                continue
 
-        # SVG konvertálása nagy felbontású PNG-vé
-        png_data = BytesIO()
-        cairosvg.svg2png(
-            bytestring=response.text.encode('utf-8'),
-            write_to=png_data,
-            dpi=300,
-            scale=2,
-            background_color='white'
-        )
-        png_data.seek(0)
-        
-        # Base64 kódolás
-        jpg_base64 = base64.b64encode(png_data.getvalue()).decode('utf-8')
-        
-        return jsonify({
-            'image': f'data:image/jpeg;base64,{jpg_base64}',
-            'thread_id': thread_id
-        })
+            encoded_uml = compress_and_encode_plantuml(plantuml_code)
+            plantuml_url = f"http://www.plantuml.com/plantuml/svg/~1{encoded_uml}"
+            
+            response = requests.get(plantuml_url)
+            if response.status_code != 200:
+                logger.warning(f"SVG lekérési hiba (Próbálkozás {attempt + 1}/{max_attempts})")
+                attempt += 1
+                time.sleep(2)
+                continue
+
+            try:
+                # Ellenőrizzük, hogy érvényes SVG-e
+                if not response.text.strip().startswith('<?xml') and not response.text.strip().startswith('<svg'):
+                    logger.warning(f"Érvénytelen SVG válasz (Próbálkozás {attempt + 1}/{max_attempts})")
+                    attempt += 1
+                    continue
+
+                # SVG konvertálása nagy felbontású PNG-vé
+                png_data = BytesIO()
+                cairosvg.svg2png(
+                    bytestring=response.text.encode('utf-8'),
+                    write_to=png_data,
+                    dpi=300,
+                    scale=2,
+                    background_color='white'
+                )
+                png_data.seek(0)
+                
+                # Base64 kódolás
+                jpg_base64 = base64.b64encode(png_data.getvalue()).decode('utf-8')
+                
+                return jsonify({
+                    'image': f'data:image/jpeg;base64,{jpg_base64}',
+                    'thread_id': thread_id
+                })
+
+            except Exception as e:
+                logger.error(f"Hiba az SVG feldolgozása során: {str(e)}")
+                attempt += 1
+                continue
+
+        return jsonify({'error': 'Nem sikerült érvényes diagramot generálni többszöri próbálkozás után sem.'}), 500
 
     except Exception as e:
         logger.error(f"Hiba történt: {str(e)}")
