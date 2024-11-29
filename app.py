@@ -44,19 +44,39 @@ A4_WIDTH = int(297 * 11.811)  # 297mm * (300/25.4)
 A4_HEIGHT = int(210 * 11.811)  # 210mm * (300/25.4)
 
 # Beszélgetési előzmények tárolása felhasználónként
-user_conversations = {}
+user_conversations = {}  # {user_id: {'messages': [], 'last_updated': datetime}}
 conversation_lock = Lock()
 MAX_MESSAGES = 20  # Rendszerüzenettel együtt
+CONVERSATION_TIMEOUT = timedelta(minutes=30)  # Beszélgetés időkorlátja
+
+def cleanup_old_conversations():
+    with conversation_lock:
+        current_time = datetime.now()
+        expired_users = [
+            user_id for user_id, data in user_conversations.items()
+            if current_time - data['last_updated'] > CONVERSATION_TIMEOUT
+        ]
+        for user_id in expired_users:
+            del user_conversations[user_id]
 
 def get_or_create_conversation(user_id):
     with conversation_lock:
+        cleanup_old_conversations()
+        
         if user_id not in user_conversations:
-            user_conversations[user_id] = []
+            user_conversations[user_id] = {
+                'messages': [],
+                'last_updated': datetime.now()
+            }
         else:
+            # Frissítjük az időbélyeget
+            user_conversations[user_id]['last_updated'] = datetime.now()
+            
             # Ha túl hosszú, vágjuk le az előzményeket
-            if len(user_conversations[user_id]) > MAX_MESSAGES:
-                user_conversations[user_id] = user_conversations[user_id][-MAX_MESSAGES:]
-        return user_conversations[user_id]
+            if len(user_conversations[user_id]['messages']) > MAX_MESSAGES:
+                user_conversations[user_id]['messages'] = user_conversations[user_id]['messages'][-MAX_MESSAGES:]
+                
+        return user_conversations[user_id]['messages']
 
 @app.before_request
 def before_request():
@@ -84,7 +104,7 @@ Fontos szabályok:
 2. Ha az új információ módosítja vagy kiegészíti a korábbi folyamatokat, frissítsd azokat.
 3. A teljes folyamatot egyetlen összefüggő diagramként ábrázold.
 4. Csak a PlantUML kódot add vissza.
-5. Használj note left és note right elemeket a lépések magyarázatához.
+5. Használj note left és note right elemeket a lépések magyarázásához.
 6. Ne használj swimlane-eket.
 7. A válasz nyelvezete egyezzen meg a felhasználó által használt nyelvvel.
 
@@ -93,34 +113,45 @@ Kérlek, csak a PlantUML kódot add vissza, semmi mást!
         }
         conversation.append(system_message)
 
-    # Felhasználó üzenetének hozzáadása
-    conversation.append({"role": "user", "content": user_input})
+    # Maximális próbálkozások száma
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        # Felhasználó üzenetének hozzáadása
+        conversation.append({"role": "user", "content": user_input})
 
-    try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=conversation,
-        )
+        try:
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=conversation,
+            )
 
-        assistant_response = response.choices[0].message.content.strip()
-        conversation.append({"role": "assistant", "content": assistant_response})
+            assistant_response = response.choices[0].message.content.strip()
+            conversation.append({"role": "assistant", "content": assistant_response})
 
-        # Tisztítsuk meg a válaszokat
-        if "@enduml" not in assistant_response:
-            logger.warning("Hiányzó @enduml a válaszból.")
-            return None, None
+            # Ellenőrzés, hogy a válasz "@enduml"-el végződik-e
+            if "@enduml" in assistant_response:
+                cleaned_response = assistant_response.replace("```plantuml", "").rstrip("`").strip()
+                cleaned_response = cleaned_response.replace(
+                    '@startuml',
+                    '@startuml\nskinparam ConditionEndStyle hline\nskinparam defaultFontName Montserrat'
+                )
+                return user_id, cleaned_response
+            else:
+                logger.warning(f"Próbálkozás {attempt}: Hiányzó @enduml a válaszból.")
+                # Legutóbbi üzenet eltávolítása a felhasználó üzenetével
+                conversation.pop()
+                conversation.pop()
+                if attempt == max_attempts:
+                    return None, "@enduml hiányzik a PlantUML kódból."
 
-        cleaned_response = assistant_response.replace("```plantuml", "").rstrip("`").strip()
-        cleaned_response = cleaned_response.replace(
-            '@startuml',
-            '@startuml\nskinparam ConditionEndStyle hline\nskinparam defaultFontName Montserrat'
-        )
+        except Exception as e:
+            logger.error(f"Próbálkozás {attempt}: Hiba történt a PlantUML generálás során: {str(e)}")
+            # Legutóbbi üzenet eltávolítása a felhasználó üzenetével
+            conversation.pop()
+            if attempt == max_attempts:
+                return None, f"Hiba történt a PlantUML generálás során: {str(e)}"
 
-        return user_id, cleaned_response
-
-    except Exception as e:
-        logger.error(f"Hiba történt a PlantUML generálás során: {str(e)}")
-        return None, None
+    return None, "@enduml hiányzik a PlantUML kódból."
 
 def compress_and_encode_plantuml(plantuml_code):
     compressed = zlib.compress(plantuml_code.encode('utf-8'))
@@ -341,7 +372,7 @@ Kedves {recipient_name}!
 
 Köszönjük, hogy az xFLOWer.ai-t használtad a folyamatábra elkészítéséhez, melyet ezen e-mail csatolmányaként küldtünk el most Neked.
 
-Az xFLOWer workflow platformmal villámgyorsan tudunk Neked működő, testreszabott folyamatokat létrehozni. Legyen szó bármilyen üzleti folyamatról, mi segítünk azt hatékonyan digitalizálni és automatizálni.
+Az xFLOWer workflow platformmal villámgyorsan tudunk Neked működő, testreszabott folyamatokat létrehozni. Legyen szó bármilyen üzleti folyamatról, mi segítünk azt hatékonyan digitaliz��lni és automatizálni.
 
 Ha szeretnéd megtapasztalni, hogyan teheted még gördülékenyebbé vállalkozásod működését, vedd fel velünk a kapcsolatot:
 
