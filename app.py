@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify, make_response
 from flask_cors import CORS
-import openai
+from openai import OpenAI
 import time
 import zlib
 import requests
@@ -18,24 +18,22 @@ from threading import Lock
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 
-# Környezeti változók betöltéses
+# Környezeti változók betöltése
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
 
-# Környezeti változók (Most már a .env fájlból töltődnek be)
+# Környezeti változók
 SMTP_SERVER = os.getenv("SMTP_SERVER")
-SMTP_PORT = int(os.getenv("SMTP_PORT", 587))  # Alapértelmezett érték megadása
+SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
 SMTP_USER = os.getenv("SMTP_USER")
 SMTP_PASS = os.getenv("SMTP_PASS")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-ASSISTANT_ID = os.getenv("ASSISTANT_ID")
-ASSISTANT_ID = os.getenv("ASSISTANT_ID")
 BCC_EMAIL = os.getenv("BCC_EMAIL")
 
-# OpenAI beállítások
-openai.api_key = OPENAI_API_KEY
+# OpenAI kliens inicializálása
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 # Logolás beállítása
 logging.basicConfig(level=logging.DEBUG)
@@ -45,48 +43,20 @@ logger = logging.getLogger(__name__)
 A4_WIDTH = int(297 * 11.811)  # 297mm * (300/25.4)
 A4_HEIGHT = int(210 * 11.811)  # 210mm * (300/25.4)
 
-# Thread tárolás módosítása - hozzáadjunk időbélyeget és cleanup funkciót
-user_threads = {
-    # 'user_id': {'thread_id': 'xxx', 'last_used': datetime}
-}
-thread_lock = Lock()
+# Beszélgetési előzmények tárolása felhasználónként
+user_conversations = {}
+conversation_lock = Lock()
+MAX_MESSAGES = 20  # Rendszerüzenettel együtt
 
-# Konstans a thread élettartamához
-THREAD_LIFETIME_HOURS = 24
-
-def cleanup_old_threads():
-    """Régi thread-ek törlése"""
-    current_time = datetime.now()
-    with thread_lock:
-        for user_id in list(user_threads.keys()):
-            if current_time - user_threads[user_id]['last_used'] > timedelta(hours=THREAD_LIFETIME_HOURS):
-                try:
-                    # OpenAI thread törlése
-                    openai.beta.threads.delete(user_threads[user_id]['thread_id'])
-                    logger.info(f"Thread törölve: {user_threads[user_id]['thread_id']} (user_id: {user_id})")
-                except Exception as e:
-                    logger.error(f"Hiba a thread törlésekor: {str(e)}")
-                del user_threads[user_id]
-
-def get_or_create_thread(user_id):
-    """Thread kezelése egy felhasználóhoz"""
-    with thread_lock:
-        if user_id in user_threads:
-            thread_data = user_threads[user_id]
-            # Frissítjük az utolsó használat időpontját
-            thread_data['last_used'] = datetime.now()
-            return thread_data['thread_id']
+def get_or_create_conversation(user_id):
+    with conversation_lock:
+        if user_id not in user_conversations:
+            user_conversations[user_id] = []
         else:
-            try:
-                thread = openai.beta.threads.create()
-                user_threads[user_id] = {
-                    'thread_id': thread.id,
-                    'last_used': datetime.now()
-                }
-                return thread.id
-            except Exception as e:
-                logger.error(f"Hiba új thread létrehozásakor: {str(e)}")
-                return None
+            # Ha túl hosszú, vágjuk le az előzményeket
+            if len(user_conversations[user_id]) > MAX_MESSAGES:
+                user_conversations[user_id] = user_conversations[user_id][-MAX_MESSAGES:]
+        return user_conversations[user_id]
 
 @app.before_request
 def before_request():
@@ -100,85 +70,57 @@ def before_request():
 def generate_plantuml_with_assistant(user_input, user_id):
     logger.debug(f"PlantUML generálás indítása: {user_input}, user_id: {user_id}")
 
-    # Cleanup indítása
-    cleanup_old_threads()
+    # Beszélgetés előzményeinek kezelése
+    conversation = get_or_create_conversation(user_id)
 
-    # Thread kezelés
-    thread_id = get_or_create_thread(user_id)
-    if not thread_id:
+    # Ha a beszélgetés üres, adjuk hozzá a rendszerüzenetet
+    if not conversation:
+        system_message = {
+            "role": "system",
+            "content": """
+Te egy olyan asszisztens vagy, aki PlantUML Activity diagramokat készít a felhasználó által megadott üzleti folyamatok alapján.
+Fontos szabályok:
+1. Az előző beszélgetésben megadott folyamatokat is építsd be a diagramba.
+2. Ha az új információ módosítja vagy kiegészíti a korábbi folyamatokat, frissítsd azokat.
+3. A teljes folyamatot egyetlen összefüggő diagramként ábrázold.
+4. Csak a PlantUML kódot add vissza.
+5. Használj note left és note right elemeket a lépések magyarázatához.
+6. Ne használj swimlane-eket.
+7. A válasz nyelvezete egyezzen meg a felhasználó által használt nyelvvel.
+
+Kérlek, csak a PlantUML kódot add vissza, semmi mást!
+            """
+        }
+        conversation.append(system_message)
+
+    # Felhasználó üzenetének hozzáadása
+    conversation.append({"role": "user", "content": user_input})
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=conversation,
+        )
+
+        assistant_response = response.choices[0].message.content.strip()
+        conversation.append({"role": "assistant", "content": assistant_response})
+
+        # Tisztítsuk meg a válaszokat
+        if "@enduml" not in assistant_response:
+            logger.warning("Hiányzó @enduml a válaszból.")
+            return None, None
+
+        cleaned_response = assistant_response.replace("```plantuml", "").rstrip("`").strip()
+        cleaned_response = cleaned_response.replace(
+            '@startuml',
+            '@startuml\nskinparam ConditionEndStyle hline\nskinparam defaultFontName Montserrat'
+        )
+
+        return user_id, cleaned_response
+
+    except Exception as e:
+        logger.error(f"Hiba történt a PlantUML generálás során: {str(e)}")
         return None, None
-
-    max_attempts = 3
-    attempt = 0
-    
-    while attempt < max_attempts:
-        try:
-            # Módosított prompt, ami kifejezetten kéri az előzmények figyelembevételét
-            openai.beta.threads.messages.create(
-                thread_id=thread_id,
-                role="user",
-                content=f"""Nézd át a beszélgetés előzményeit, és hozz létre egy olyan PlantUML Activity diagramot, 
-                ami az ÖSSZES eddigi információt tartalmazza, beleértve ezt az új kérést is: {user_input}
-
-                Fontos szabályok:
-                1. Az előző beszélgetésben megadott folyamatokat is építsd be a diagramba
-                2. Ha az új információ módosítja vagy kiegészíti a korábbi folyamatokat, frissítsd azokat
-                3. A teljes folyamatot egyetlen összefüggő diagramként ábrázold
-                4. Csak a PlantUML kódot add vissza
-                5. Használj note left és note right elemeket a lépések magyarázatához
-                6. Ne használj swimlane-eket
-                7. A válasz nyelvezete egyezzen meg a felhasználó által használt nyelvvel
-
-                Kérlek, csak a PlantUML kódot add vissza, semmi mást!"""
-            )
-
-            run = openai.beta.threads.runs.create(
-                thread_id=thread_id,
-                assistant_id=ASSISTANT_ID,
-            )
-
-            status = check_status(run.id, thread_id)
-            while status != "completed":
-                logger.debug(f"Várakozás a futás befejezésére, jelenlegi státusz: {status}")
-                status = check_status(run.id, thread_id)
-                time.sleep(2)
-
-            response = openai.beta.threads.messages.list(thread_id=thread_id)
-            
-            if not response.data:
-                logger.error("Nem sikerült asszisztens válaszát lekérni.")
-                attempt += 1
-                continue
-
-            assistant_response = response.data[0].content[0].text.value
-            
-            # Ellenőrizzük, hogy tartalmazza-e az @enduml részt
-            if "@enduml" not in assistant_response:
-                logger.warning("Hiányzó @enduml a válaszból, újrapróbálkozás...")
-                attempt += 1
-                continue
-
-            cleaned_response = assistant_response.replace("```plantuml", "").rstrip("`").strip()
-            cleaned_response = cleaned_response.replace(
-                '@startuml',
-                '@startuml\nskinparam ConditionEndStyle hline\nskinparam defaultFontName Montserrat'
-            )
-
-            return thread_id, cleaned_response
-
-        except Exception as e:
-            logger.error(f"Hiba történt a PlantUML generálás során: {str(e)}")
-            attempt += 1
-            time.sleep(2)  # Várunk 2 másodpercet újrapróbálkozás előtt
-
-    return None, None
-
-def check_status(run_id, thread_id):
-    run = openai.beta.threads.runs.retrieve(
-        thread_id=thread_id,
-        run_id=run_id,
-    )
-    return run.status
 
 def compress_and_encode_plantuml(plantuml_code):
     compressed = zlib.compress(plantuml_code.encode('utf-8'))
@@ -192,24 +134,24 @@ def encode64_for_ascii(bytes_data):
         b1 = bytes_data[i] if i < len(bytes_data) else 0
         b2 = bytes_data[i + 1] if i + 1 < len(bytes_data) else 0
         b3 = bytes_data[i + 2] if i + 2 < len(bytes_data) else 0
-        
+
         c1 = b1 >> 2
         c2 = ((b1 & 0x3) << 4) | (b2 >> 4)
         c3 = ((b2 & 0xF) << 2) | (b3 >> 6)
         c4 = b3 & 0x3F
-        
+
         result += (base64_chars[c1] + base64_chars[c2] +
-                  (base64_chars[c3] if i + 1 < len(bytes_data) else '') +
-                  (base64_chars[c4] if i + 2 < len(bytes_data) else ''))
+                   (base64_chars[c3] if i + 1 < len(bytes_data) else '') +
+                   (base64_chars[c4] if i + 2 < len(bytes_data) else ''))
         i += 3
-    
+
     return result
 
 def create_a4_image(image_data, recipient_name):
     # Base64 kép feldolgozása
     image_bytes = base64.b64decode(image_data.split('base64,')[1])
     image = Image.open(BytesIO(image_bytes))
-    
+
     # Új A4 méretű kép létrehozása fehér háttérrel
     a4_image = Image.new('RGB', (A4_WIDTH, A4_HEIGHT), 'white')
     draw = ImageDraw.Draw(a4_image)
@@ -235,7 +177,7 @@ def create_a4_image(image_data, recipient_name):
     logo = Image.open('logo2.png')
     if logo.mode != 'RGBA':
         logo = logo.convert('RGBA')
-    
+
     logo_width = int(A4_WIDTH * 0.15)
     logo_height = int(logo.height * (logo_width / logo.width))
     logo = logo.resize((logo_width, logo_height), Image.Resampling.LANCZOS)
@@ -285,59 +227,40 @@ def generate_diagram():
     try:
         data = request.get_json()
         user_message = data['message']
-        user_id = request.remote_addr
+        user_id = request.remote_addr  # Esetleg használj egyedi azonosítót a felhasználóhoz
 
-        max_attempts = 3  # Maximum próbálkozások száma az SVG generálásra
-        attempt = 0
+        # Generáljuk a diagramot
+        user_id, plantuml_code = generate_plantuml_with_assistant(user_message, user_id)
+        if not plantuml_code:
+            return jsonify({'error': 'Nem sikerült diagramot generálni.'}), 500
 
-        while attempt < max_attempts:
-            thread_id, plantuml_code = generate_plantuml_with_assistant(user_message, user_id)
-            if not plantuml_code:
-                attempt += 1
-                continue
+        # PlantUML kód kódolása és kép generálása
+        encoded_uml = compress_and_encode_plantuml(plantuml_code)
+        plantuml_url = f"http://www.plantuml.com/plantuml/svg/~1{encoded_uml}"
 
-            encoded_uml = compress_and_encode_plantuml(plantuml_code)
-            plantuml_url = f"http://www.plantuml.com/plantuml/svg/~1{encoded_uml}"
-            
-            response = requests.get(plantuml_url)
-            if response.status_code != 200:
-                logger.warning(f"SVG lekérési hiba (Próbálkozás {attempt + 1}/{max_attempts})")
-                attempt += 1
-                time.sleep(2)
-                continue
+        response = requests.get(plantuml_url)
+        if response.status_code != 200:
+            logger.warning("SVG lekérési hiba")
+            return jsonify({'error': 'Nem sikerült SVG képet lekérni.'}), 500
 
-            try:
-                # Ellenőrizzük, hogy érvényes SVG-e
-                if not response.text.strip().startswith('<?xml') and not response.text.strip().startswith('<svg'):
-                    logger.warning(f"Érvénytelen SVG válasz (Próbálkozás {attempt + 1}/{max_attempts})")
-                    attempt += 1
-                    continue
+        # SVG konvertálása nagy felbontású PNG-vé
+        png_data = BytesIO()
+        cairosvg.svg2png(
+            bytestring=response.text.encode('utf-8'),
+            write_to=png_data,
+            dpi=300,
+            scale=2,
+            background_color='white'
+        )
+        png_data.seek(0)
 
-                # SVG konvertálása nagy felbontású PNG-vé
-                png_data = BytesIO()
-                cairosvg.svg2png(
-                    bytestring=response.text.encode('utf-8'),
-                    write_to=png_data,
-                    dpi=300,
-                    scale=2,
-                    background_color='white'
-                )
-                png_data.seek(0)
-                
-                # Base64 kódolás
-                jpg_base64 = base64.b64encode(png_data.getvalue()).decode('utf-8')
-                
-                return jsonify({
-                    'image': f'data:image/jpeg;base64,{jpg_base64}',
-                    'thread_id': thread_id
-                })
+        # Base64 kódolás
+        jpg_base64 = base64.b64encode(png_data.getvalue()).decode('utf-8')
 
-            except Exception as e:
-                logger.error(f"Hiba az SVG feldolgozása során: {str(e)}")
-                attempt += 1
-                continue
-
-        return jsonify({'error': 'Nem sikerült érvényes diagramot generálni többszöri próbálkozás után sem.'}), 500
+        return jsonify({
+            'image': f'data:image/jpeg;base64,{jpg_base64}',
+            'thread_id': user_id  # Itt már nem használjuk a thread_id-t
+        })
 
     except Exception as e:
         logger.error(f"Hiba történt: {str(e)}")
@@ -350,13 +273,13 @@ def send_email():
         recipient_name = data.get('name')
         recipient_email = data.get('email')
         image_data = data.get('image')
-        
+
         if not all([recipient_name, recipient_email, image_data]):
             return jsonify({'error': 'Hiányzó adatok'}), 400
 
         # A4-es kép létrehozása
         a4_image = create_a4_image(image_data, recipient_name)
-        
+
         # Kép mentése BytesIO objektumba
         output = BytesIO()
         a4_image.save(output, format='JPEG', quality=95, dpi=(300, 300))
@@ -456,7 +379,7 @@ https://xflower.hu
     except Exception as e:
         logger.error(f"Hiba az e-mail küldése során: {str(e)}")
         return jsonify({'error': str(e)}), 500
-    
+
 @app.route('/network-test')
 def network_test():
     import socket
@@ -478,7 +401,6 @@ def network_test():
         results['http_request'] = f"HTTP kérés hiba: {e}"
 
     return jsonify(results)
-
 
 if __name__ == '__main__':
     app.run(debug=True)
