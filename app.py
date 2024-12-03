@@ -25,7 +25,7 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app, 
      supports_credentials=True,
-     origins=['http://localhost:5000', 'https://xflower.ai'],  # Engedélyezett originek
+     origins=['https://xflower.ai', 'http://localhost:5000', 'http://127.0.0.1:5000'],
      allow_headers=['Content-Type'],
      expose_headers=['Access-Control-Allow-Origin'],
      methods=['GET', 'POST', 'OPTIONS'])
@@ -60,9 +60,10 @@ thread_lock = Lock()
 THREAD_LIFETIME_HOURS = 24
 
 # Session konfiguráció
-app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-app.config['SESSION_COOKIE_SECURE'] = True  # HTTPS esetén
+app.config['SESSION_COOKIE_SAMESITE'] = 'None'  # Cross-site kérésekhez
+app.config['SESSION_COOKIE_SECURE'] = True  # Csak HTTPS
 app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_NAME'] = 'xflower_session'  # Egyedi session cookie név
 app.secret_key = "supersecretkey123"  # Ez csak teszteléshez! Production környezetben használj erősebb kulcsot
 
 def cleanup_old_threads():
@@ -291,11 +292,17 @@ def create_a4_image(image_data, recipient_name):
 
     return a4_image
 
-@app.route('/init-session', methods=['POST'])
+@app.route('/init-session', methods=['POST', 'OPTIONS'])
 def init_session():
-    # Új session generálása
-    session['session_id'] = secrets.token_urlsafe(32)
-    return jsonify({'session_id': session['session_id']})
+    if request.method == 'OPTIONS':
+        return make_response()
+        
+    try:
+        session['session_id'] = secrets.token_urlsafe(32)
+        response = jsonify({'session_id': session['session_id']})
+        return response
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/chat', methods=['POST'])
 def generate_diagram():
