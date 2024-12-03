@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, make_response
+from flask import Flask, request, jsonify, make_response, session
 from flask_cors import CORS
 import openai
 import time
@@ -17,6 +17,7 @@ from email.mime.image import MIMEImage
 from threading import Lock
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
+import secrets
 
 # Környezeti változók betöltéses
 load_dotenv()
@@ -30,7 +31,6 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", 587))  # Alapértelmezett érték megadá
 SMTP_USER = os.getenv("SMTP_USER")
 SMTP_PASS = os.getenv("SMTP_PASS")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-ASSISTANT_ID = os.getenv("ASSISTANT_ID")
 ASSISTANT_ID = os.getenv("ASSISTANT_ID")
 BCC_EMAIL = os.getenv("BCC_EMAIL")
 
@@ -53,6 +53,12 @@ thread_lock = Lock()
 
 # Konstans a thread élettartamához
 THREAD_LIFETIME_HOURS = 24
+
+# Session konfiguráció
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = True  # HTTPS esetén
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.secret_key = os.getenv('FLASK_SECRET_KEY')  # Titkos kulcs a .env fájlból
 
 def cleanup_old_threads():
     """Régi thread-ek törlése"""
@@ -280,12 +286,23 @@ def create_a4_image(image_data, recipient_name):
 
     return a4_image
 
+@app.route('/init-session', methods=['POST'])
+def init_session():
+    # Új session generálása
+    session['session_id'] = secrets.token_urlsafe(32)
+    return jsonify({'session_id': session['session_id']})
+
 @app.route('/chat', methods=['POST'])
 def generate_diagram():
     try:
         data = request.get_json()
         user_message = data['message']
-        user_id = request.remote_addr
+        
+        # Session ellenőrzése
+        if 'session_id' not in session:
+            return jsonify({'error': 'Érvénytelen session'}), 401
+            
+        user_id = session['session_id']
 
         max_attempts = 3  # Maximum próbálkozások száma az SVG generálásra
         attempt = 0
