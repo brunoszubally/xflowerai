@@ -122,9 +122,6 @@ def get_or_create_thread(user_id):
 def generate_plantuml_with_assistant(user_input, user_id):
     logger.debug(f"PlantUML generálás indítása: {user_input}, user_id: {user_id}")
 
-    # Cleanup indítása
-    cleanup_old_threads()
-
     # Thread kezelés
     thread_id = get_or_create_thread(user_id)
     if not thread_id:
@@ -135,26 +132,32 @@ def generate_plantuml_with_assistant(user_input, user_id):
     
     while attempt < max_attempts:
         try:
-            # Módosított prompt, ami kifejezetten kéri az előzmények figyelembevételét
-            openai.beta.threads.messages.create(
+            # Üzenet küldése
+            message = openai.beta.threads.messages.create(
                 thread_id=thread_id,
                 role="user",
                 content=f"""Create PlantUML Activity diagram code for this business process, ensuring the code strictly follows PlantUML syntax.   Only return the PlantUML code, which should include extra notes for steps. The output should be in in the input language, and return nothing else but the PlantUML code. (with the notes of course, note left and note right).  Don't use swimlanes! Always remember and modify based on previous processes in one conversation! ALWAYS GIVE THE SAME LANGUAGE AS THE USERS INPUT!
 User input: {user_input}"""
             )
+            logger.debug(f"OpenAI üzenet elküldve: {message}")
 
+            # Futtatás indítása
             run = openai.beta.threads.runs.create(
                 thread_id=thread_id,
                 assistant_id=ASSISTANT_ID,
             )
+            logger.debug(f"OpenAI futtatás indítva: {run}")
 
+            # Státusz ellenőrzése
             status = check_status(run.id, thread_id)
             while status != "completed":
                 logger.debug(f"Várakozás a futás befejezésére, jelenlegi státusz: {status}")
                 status = check_status(run.id, thread_id)
                 time.sleep(2)
 
+            # Válasz lekérése
             response = openai.beta.threads.messages.list(thread_id=thread_id)
+            logger.debug(f"OpenAI válasz: {response}")
             
             if not response.data:
                 logger.error("Nem sikerült asszisztens válaszát lekérni.")
@@ -162,6 +165,7 @@ User input: {user_input}"""
                 continue
 
             assistant_response = response.data[0].content[0].text.value
+            logger.debug(f"Asszisztens válasza: {assistant_response}")
             
             # Ellenőrizzük, hogy tartalmazza-e az @enduml részt
             if "@enduml" not in assistant_response:
@@ -174,13 +178,14 @@ User input: {user_input}"""
                 '@startuml',
                 '@startuml\nskinparam ConditionEndStyle hline\nskinparam defaultFontName Montserrat'
             )
+            logger.debug(f"Tisztított válasz: {cleaned_response}")
 
             return thread_id, cleaned_response
 
         except Exception as e:
             logger.error(f"Hiba történt a PlantUML generálás során: {str(e)}")
             attempt += 1
-            time.sleep(2)  # Várunk 2 másodpercet újrapróbálkozás előtt
+            time.sleep(2)
 
     return None, None
 
