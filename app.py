@@ -27,8 +27,7 @@ CORS(app,
      supports_credentials=True,
      origins=['https://xflower.ai'],
      allow_headers=['Content-Type'],
-     expose_headers=['Access-Control-Allow-Origin'],
-     methods=['GET', 'POST', 'OPTIONS'])
+     expose_headers=['Access-Control-Allow-Origin'])
 
 # Környezeti változók (Most már a .env fájlból töltődnek be)
 SMTP_SERVER = os.getenv("SMTP_SERVER")
@@ -60,11 +59,12 @@ thread_lock = Lock()
 THREAD_LIFETIME_HOURS = 24
 
 # Session konfiguráció
-app.config['SESSION_COOKIE_SAMESITE'] = 'None'  # Cross-site kérésekhez
-app.config['SESSION_COOKIE_SECURE'] = True  # Csak HTTPS
-app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_NAME'] = 'xflower_session'  # Egyedi session cookie név
-app.secret_key = "supersecretkey123"  # Ez csak teszteléshez! Production környezetben használj erősebb kulcsot
+app.config.update(
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='None',
+    SESSION_COOKIE_NAME='xflower_session'
+)
 
 def cleanup_old_threads():
     """Régi thread-ek törlése"""
@@ -104,9 +104,10 @@ def get_or_create_thread(user_id):
 def before_request():
     if request.method == "OPTIONS":
         response = make_response()
-        response.headers.add("Access-Control-Allow-Origin", "*")
+        response.headers.add("Access-Control-Allow-Origin", "https://xflower.ai")
         response.headers.add("Access-Control-Allow-Headers", "*")
         response.headers.add("Access-Control-Allow-Methods", "*")
+        response.headers.add("Access-Control-Allow-Credentials", "true")
         return response
 
 def generate_plantuml_with_assistant(user_input, user_id):
@@ -294,7 +295,7 @@ def create_a4_image(image_data, recipient_name):
 
 @app.route('/init-session', methods=['POST', 'OPTIONS'])
 def init_session():
-    if request.method == 'OPTIONS':
+    if request.method == "OPTIONS":
         return make_response()
         
     try:
@@ -304,23 +305,23 @@ def init_session():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/chat', methods=['POST'])
-def generate_diagram():
+@app.route('/chat', methods=['POST', 'OPTIONS'])
+def chat():
+    if request.method == "OPTIONS":
+        return make_response()
+        
+    if 'session_id' not in session:
+        return jsonify({'error': 'Érvénytelen session'}), 401
+        
     try:
         data = request.get_json()
         user_message = data['message']
         
-        # Session ellenőrzése
-        if 'session_id' not in session:
-            return jsonify({'error': 'Érvénytelen session'}), 401
-            
-        user_id = session['session_id']
-
         max_attempts = 3  # Maximum próbálkozások száma az SVG generálásra
         attempt = 0
 
         while attempt < max_attempts:
-            thread_id, plantuml_code = generate_plantuml_with_assistant(user_message, user_id)
+            thread_id, plantuml_code = generate_plantuml_with_assistant(user_message, session['session_id'])
             if not plantuml_code:
                 attempt += 1
                 continue
