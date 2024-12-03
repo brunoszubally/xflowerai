@@ -23,11 +23,38 @@ import secrets
 load_dotenv()
 
 app = Flask(__name__)
+app.secret_key = "supersecretkey123"
+
+# CORS beállítások egyszerűsítése
 CORS(app, 
-     supports_credentials=True,
-     origins=['https://xflower.ai'],
-     allow_headers=['Content-Type'],
-     expose_headers=['Access-Control-Allow-Origin'])
+     resources={
+         r"/*": {  # Minden útvonalra
+             "origins": ["https://xflower.ai"],
+             "methods": ["GET", "POST", "OPTIONS"],
+             "allow_headers": ["Content-Type"],
+             "supports_credentials": True
+         }
+     })
+
+# Session konfiguráció
+app.config.update(
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='None',
+    SESSION_COOKIE_NAME='xflower_session'
+)
+
+@app.before_request
+def before_request():
+    if request.method == "OPTIONS":
+        response = make_response()
+        response.headers.update({
+            "Access-Control-Allow-Origin": "https://xflower.ai",
+            "Access-Control-Allow-Headers": "Content-Type",  # Explicit Content-Type engedélyezés
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Credentials": "true"
+        })
+        return response
 
 # Környezeti változók (Most már a .env fájlból töltődnek be)
 SMTP_SERVER = os.getenv("SMTP_SERVER")
@@ -57,14 +84,6 @@ thread_lock = Lock()
 
 # Konstans a thread élettartamához
 THREAD_LIFETIME_HOURS = 24
-
-# Session konfiguráció
-app.config.update(
-    SESSION_COOKIE_SECURE=True,
-    SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE='None',
-    SESSION_COOKIE_NAME='xflower_session'
-)
 
 def cleanup_old_threads():
     """Régi thread-ek törlése"""
@@ -99,16 +118,6 @@ def get_or_create_thread(user_id):
             except Exception as e:
                 logger.error(f"Hiba új thread létrehozásakor: {str(e)}")
                 return None
-
-@app.before_request
-def before_request():
-    if request.method == "OPTIONS":
-        response = make_response()
-        response.headers.add("Access-Control-Allow-Origin", "https://xflower.ai")
-        response.headers.add("Access-Control-Allow-Headers", "*")
-        response.headers.add("Access-Control-Allow-Methods", "*")
-        response.headers.add("Access-Control-Allow-Credentials", "true")
-        return response
 
 def generate_plantuml_with_assistant(user_input, user_id):
     logger.debug(f"PlantUML generálás indítása: {user_input}, user_id: {user_id}")
