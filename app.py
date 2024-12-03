@@ -60,12 +60,10 @@ thread_lock = Lock()
 THREAD_LIFETIME_HOURS = 24
 
 # Session konfiguráció
-app.config.update(
-    SESSION_COOKIE_SECURE=True,
-    SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE='None',  # Módosítva 'None'-ra cross-site kérésekhez
-    SESSION_COOKIE_DOMAIN='classic-cordi-adaptivedigital-4fa1c231.koyeb.app'  # Domain beállítása
-)
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = True  # HTTPS esetén
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.secret_key = "supersecretkey123"  # Ez csak teszteléshez! Production környezetben használj erősebb kulcsot
 
 def cleanup_old_threads():
     """Régi thread-ek törlése"""
@@ -293,29 +291,11 @@ def create_a4_image(image_data, recipient_name):
 
     return a4_image
 
-@app.route('/init-session', methods=['POST', 'OPTIONS'])
+@app.route('/init-session', methods=['POST'])
 def init_session():
-    try:
-        if request.method == 'OPTIONS':
-            return handle_preflight()
-            
-        # Új session generálása
-        session['session_id'] = secrets.token_urlsafe(32)
-        
-        response = jsonify({'session_id': session['session_id']})
-        return response
-        
-    except Exception as e:
-        logger.error(f"Session inicializálási hiba: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-def handle_preflight():
-    response = make_response()
-    response.headers.add('Access-Control-Allow-Origin', request.headers.get('Origin', '*'))
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
-    response.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
-    response.headers.add('Access-Control-Allow-Credentials', 'true')
-    return response
+    # Új session generálása
+    session['session_id'] = secrets.token_urlsafe(32)
+    return jsonify({'session_id': session['session_id']})
 
 @app.route('/chat', methods=['POST'])
 def generate_diagram():
@@ -430,7 +410,7 @@ def send_email():
         
         <p>Örömmel értesítünk, hogy a folyamatábrád elkészült, melyet ezen e-mail csatolmányaként küldünk el Neked.</p>
         
-        <p>Az <strong>xFLOWer workflow platformmal</strong> villámgyorsan tudunk Neked működő, testreszabott folyamatokat létrehozni. Legyen szó bármilyen üzleti folyamatról, mi segítünk azt hatékonyan digitalizálni és automatizálni.</p>
+        <p>Az <strong>xFLOWer workflow platformmal</strong> villámgyorsan tudunk Neked működő, testreszabott folyamatokat létrehozni. Legyen szó bármilyen zleti folyamatról, mi segítünk azt hatékonyan digitalizálni és automatizálni.</p>
         
         <p>Ha szeretnéd megtapasztalni, hogyan teheted még gördülékenyebbé vállalkozásod működését, vedd fel velünk a kapcsolatot:</p>
         
