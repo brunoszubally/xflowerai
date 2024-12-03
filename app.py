@@ -139,19 +139,8 @@ def generate_plantuml_with_assistant(user_input, user_id):
             openai.beta.threads.messages.create(
                 thread_id=thread_id,
                 role="user",
-                content=f"""Nézd át a beszélgetés előzményeit, és hozz létre egy olyan PlantUML Activity diagramot, 
-                ami az ÖSSZES eddigi információt tartalmazza, beleértve ezt az új kérést is: {user_input}
-
-                Fontos szabályok:
-                1. Az előző beszélgetésben megadott folyamatokat is építsd be a diagramba
-                2. Ha az új információ módosítja vagy kiegészíti a korábbi folyamatokat, frissítsd azokat
-                3. A teljes folyamatot egyetlen összefüggő diagramként ábrázold
-                4. Csak a PlantUML kódot add vissza
-                5. Használj note left és note right elemeket a lépések magyarázatához
-                6. Ne használj swimlane-eket
-                7. A válasz nyelvezete egyezzen meg a felhasználó által használt nyelvvel
-
-                Kérlek, csak a PlantUML kódot add vissza, semmi mást!"""
+                content=f"""Create PlantUML Activity diagram code for this business process, ensuring the code strictly follows PlantUML syntax.   Only return the PlantUML code, which should include extra notes for steps. The output should be in in the input language, and return nothing else but the PlantUML code. (with the notes of course, note left and note right).  Don't use swimlanes! Always remember and modify based on previous processes in one conversation! ALWAYS GIVE THE SAME LANGUAGE AS THE USERS INPUT!
+User input: {user_input}"""
             )
 
             run = openai.beta.threads.runs.create(
