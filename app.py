@@ -23,7 +23,12 @@ import secrets
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, 
+     supports_credentials=True,
+     origins=['http://localhost:5000', 'https://xflower.ai'],  # Engedélyezett originek
+     allow_headers=['Content-Type'],
+     expose_headers=['Access-Control-Allow-Origin'],
+     methods=['GET', 'POST', 'OPTIONS'])
 
 # Környezeti változók (Most már a .env fájlból töltődnek be)
 SMTP_SERVER = os.getenv("SMTP_SERVER")
@@ -55,10 +60,12 @@ thread_lock = Lock()
 THREAD_LIFETIME_HOURS = 24
 
 # Session konfiguráció
-app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-app.config['SESSION_COOKIE_SECURE'] = True  # HTTPS esetén
-app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.secret_key = os.getenv('FLASK_SECRET_KEY')  # Titkos kulcs a .env fájlból
+app.config.update(
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='None',  # Módosítva 'None'-ra cross-site kérésekhez
+    SESSION_COOKIE_DOMAIN='classic-cordi-adaptivedigital-4fa1c231.koyeb.app'  # Domain beállítása
+)
 
 def cleanup_old_threads():
     """Régi thread-ek törlése"""
@@ -286,11 +293,29 @@ def create_a4_image(image_data, recipient_name):
 
     return a4_image
 
-@app.route('/init-session', methods=['POST'])
+@app.route('/init-session', methods=['POST', 'OPTIONS'])
 def init_session():
-    # Új session generálása
-    session['session_id'] = secrets.token_urlsafe(32)
-    return jsonify({'session_id': session['session_id']})
+    try:
+        if request.method == 'OPTIONS':
+            return handle_preflight()
+            
+        # Új session generálása
+        session['session_id'] = secrets.token_urlsafe(32)
+        
+        response = jsonify({'session_id': session['session_id']})
+        return response
+        
+    except Exception as e:
+        logger.error(f"Session inicializálási hiba: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+def handle_preflight():
+    response = make_response()
+    response.headers.add('Access-Control-Allow-Origin', request.headers.get('Origin', '*'))
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+    response.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
+    response.headers.add('Access-Control-Allow-Credentials', 'true')
+    return response
 
 @app.route('/chat', methods=['POST'])
 def generate_diagram():
