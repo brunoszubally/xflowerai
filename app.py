@@ -25,7 +25,7 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app, 
      supports_credentials=True,
-     origins=['https://xflower.ai', 'http://localhost:5000', 'http://127.0.0.1:5000'],
+     origins=['https://xflower.ai'],
      allow_headers=['Content-Type'],
      expose_headers=['Access-Control-Allow-Origin'],
      methods=['GET', 'POST', 'OPTIONS'])
