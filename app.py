@@ -119,6 +119,18 @@ def get_or_create_thread(user_id):
                 logger.error(f"Hiba új thread létrehozásakor: {str(e)}")
                 return None
 
+def clean_plantuml_notes(plantuml_code):
+    """Eltávolítja a zárójeleket a note sorokból"""
+    cleaned_lines = []
+    for line in plantuml_code.split('\n'):
+        if line.strip().lower().startswith('note'):
+            # Zárójelek eltávolítása a sorból
+            cleaned_line = line.replace('(', '').replace(')', '')
+            cleaned_lines.append(cleaned_line)
+        else:
+            cleaned_lines.append(line)
+    return '\n'.join(cleaned_lines)
+
 def generate_plantuml_with_assistant(user_input, user_id):
     logger.debug(f"PlantUML generálás indítása: {user_input}, user_id: {user_id}")
 
@@ -136,7 +148,7 @@ def generate_plantuml_with_assistant(user_input, user_id):
             message = openai.beta.threads.messages.create(
                 thread_id=thread_id,
                 role="user",
-                content=f"""Create PlantUML Activity diagram code for this business process, ensuring the code strictly follows PlantUML syntax.   Only return the PlantUML code, which should include extra notes for steps. The output should be in in the input language, and return nothing else but the PlantUML code. (with the notes of course, note left and note right).  Don't use swimlanes! Always remember and modify based on previous processes in one conversation! ALWAYS GIVE THE SAME LANGUAGE AS THE USERS INPUT!
+                content=f""" ALWAYS GIVE THE SAME LANGUAGE AS THE USERS INPUT! Create PlantUML Activity diagram code for this business process, ensuring the code strictly follows PlantUML syntax.   Only return the PlantUML code, which should include extra notes for steps. DONT USE BRACKETS FOR NOTES! The output should be in in the input language, and return nothing else but the PlantUML code. Don't use swimlanes! Always remember and modify based on previous processes in one conversation!
 User input: {user_input}"""
             )
             logger.debug(f"OpenAI üzenet elküldve: {message}")
@@ -178,6 +190,8 @@ User input: {user_input}"""
                 '@startuml',
                 '@startuml\nskinparam ConditionEndStyle hline\nskinparam defaultFontName Montserrat'
             )
+            # Note-ok tisztítása
+            cleaned_response = clean_plantuml_notes(cleaned_response)
             logger.debug(f"Tisztított válasz: {cleaned_response}")
 
             return thread_id, cleaned_response
