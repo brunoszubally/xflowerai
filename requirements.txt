@@ -5,3 +5,5 @@ requests
 Pillow
 cairosvg
 python-dotenv
+dnspython
+tenacity

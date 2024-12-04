@@ -18,6 +18,11 @@ from threading import Lock
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 import secrets
+from email.utils import formataddr
+from email.header import Header
+import dns.resolver
+import re
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 # Környezeti változók betöltéses
 load_dotenv()
@@ -376,41 +381,41 @@ def chat():
         logger.error(f"Hiba történt: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/send-email', methods=['POST'])
-def send_email():
+# Email validáció függvény
+def validate_email(email):
+    """Email cím validálása"""
+    # Alap formátum ellenőrzés regex-szel
+    email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    if not re.match(email_regex, email):
+        return False, "Érvénytelen email formátum"
+    
+    # Domain MX rekord ellenőrzése
+    domain = email.split('@')[1]
     try:
-        data = request.get_json()
-        recipient_name = data.get('name')
-        recipient_email = data.get('email')
-        image_data = data.get('image')
-        
-        if not all([recipient_name, recipient_email, image_data]):
-            return jsonify({'error': 'Hiányzó adatok'}), 400
+        dns.resolver.resolve(domain, 'MX')
+        return True, ""
+    except Exception:
+        return False, "Érvénytelen email domain"
 
-        # A4-es kép létrehozása
-        a4_image = create_a4_image(image_data, recipient_name)
-        
-        # Kép mentése BytesIO objektumba
-        output = BytesIO()
-        a4_image.save(output, format='JPEG', quality=95, dpi=(300, 300))
-        output.seek(0)
+# Retry dekorátor az email küldéshez
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+def send_email_with_retry(msg):
+    """Email küldés újrapróbálkozással"""
+    with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=30) as server:
+        server.starttls()
+        server.login(SMTP_USER, SMTP_PASS)
+        return server.send_message(msg)
 
-        msg = MIMEMultipart('alternative')
-        msg['From'] = SMTP_USER
-        msg['To'] = recipient_email
-        msg['Subject'] = "Folyamatábra az xFLOWer.ai-tól"
-        msg['Bcc'] = BCC_EMAIL
-
-        # HTML verzió
-        html = f"""
+# Email szövegek konstansként definiálva
+HTML_TEMPLATE = """
 <html>
 <head>
     <style>
-        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; background-color: #f4f4f4; }}
-        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }}
-        h1 {{ color: #b42325; }}
-        .cta {{ background-color: #b42325; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 3px; display: inline-block; }}
-        .footer {{ margin-top: 20px; font-size: 12px; color: #777; text-align: center; }}
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; background-color: #f4f4f4; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; background-color: #ffffff; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        h1 { color: #b42325; }
+        .cta { background-color: #b42325; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 3px; display: inline-block; }
+        .footer { margin-top: 20px; font-size: 12px; color: #777; text-align: center; }
     </style>
 </head>
 <body>
@@ -421,7 +426,7 @@ def send_email():
         
         <p>Örömmel értesítünk, hogy a folyamatábrád elkészült, melyet ezen e-mail csatolmányaként küldünk el Neked.</p>
         
-        <p>Az <strong>xFLOWer workflow platformmal</strong> villámgyorsan tudunk Neked működő, testreszabott folyamatokat létrehozni. Legyen szó bármilyen zleti folyamatról, mi segítünk azt hatékonyan digitalizálni és automatizálni.</p>
+        <p>Az <strong>xFLOWer workflow platformmal</strong> villámgyorsan tudunk Neked működő, testreszabott folyamatokat létrehozni. Legyen szó bármilyen üzleti folyamatról, mi segítünk azt hatékonyan digitalizálni és automatizálni.</p>
         
         <p>Ha szeretnéd megtapasztalni, hogyan teheted még gördülékenyebbé vállalkozásod működését, vedd fel velünk a kapcsolatot:</p>
         
@@ -445,8 +450,7 @@ def send_email():
 </html>
 """
 
-        # Plain text verzió
-        text = f"""
+PLAIN_TEXT_TEMPLATE = """
 Kedves {recipient_name}!
 
 Köszönjük, hogy az xFLOWer.ai-t használtad a folyamatábra elkészítéséhez, melyet ezen e-mail csatolmányaként küldtünk el most Neked.
@@ -467,29 +471,78 @@ Az xFLOWer csapata
 https://xflower.hu
 """
 
-        part1 = MIMEText(text, 'plain')
-        part2 = MIMEText(html, 'html')
+# Email küldés módosítása a /send-email route-ban
+@app.route('/send-email', methods=['POST'])
+def send_email():
+    try:
+        data = request.get_json()
+        recipient_name = data.get('name')
+        recipient_email = data.get('email')
+        image_data = data.get('image')
+        
+        if not all([recipient_name, recipient_email, image_data]):
+            return jsonify({'error': 'Hiányzó adatok'}), 400
 
-        msg.attach(part1)
-        msg.attach(part2)
+        # Email validáció
+        is_valid, error_msg = validate_email(recipient_email)
+        if not is_valid:
+            return jsonify({'error': error_msg}), 400
 
-        # Folyamatábra csatolása
-        image_attachment = MIMEImage(output.getvalue())
-        image_attachment.add_header('Content-Disposition', 'attachment', filename='xflower_folyamatabra.jpg')
-        msg.attach(image_attachment)
+        # A4-es kép létrehozása
+        try:
+            a4_image = create_a4_image(image_data, recipient_name)
+        except Exception as e:
+            logger.error(f"Hiba a kép létrehozásakor: {str(e)}")
+            return jsonify({'error': 'Hiba történt a kép feldolgozása során'}), 500
 
-        # E-mail küldése
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-            server.starttls()
-            server.login(SMTP_USER, SMTP_PASS)
-            server.send_message(msg)
+        # Email összeállítása try blokkban
+        try:
+            msg = MIMEMultipart('alternative')
+            msg['From'] = formataddr(("xFLOWer.ai", SMTP_USER))
+            msg['To'] = formataddr((str(Header(recipient_name, 'utf-8')), recipient_email))
+            msg['Subject'] = Header("Folyamatábra az xFLOWer.ai-tól", 'utf-8')
+            msg['Bcc'] = BCC_EMAIL
+            msg['Message-ID'] = f"<{secrets.token_hex(16)}@xflower.ai>"
+            msg['Date'] = email.utils.formatdate(localtime=True)
 
-        return jsonify({'success': True, 'message': 'E-mail sikeresen elküldve'})
+            # Kép mentése BytesIO objektumba
+            output = BytesIO()
+            a4_image.save(output, format='JPEG', quality=95, dpi=(300, 300))
+            output.seek(0)
+
+            # HTML és szöveges verzió hozzáadása a template-ek használatával
+            text = PLAIN_TEXT_TEMPLATE.format(recipient_name=recipient_name)
+            html = HTML_TEMPLATE.format(recipient_name=recipient_name)
+            
+            part1 = MIMEText(text, 'plain', 'utf-8')
+            part2 = MIMEText(html, 'html', 'utf-8')
+            msg.attach(part1)
+            msg.attach(part2)
+
+            # Kép csatolása
+            image_attachment = MIMEImage(output.getvalue())
+            image_attachment.add_header('Content-Disposition', 'attachment', 
+                                     filename='xflower_folyamatabra.jpg')
+            msg.attach(image_attachment)
+
+        except Exception as e:
+            logger.error(f"Hiba az email összeállításakor: {str(e)}")
+            return jsonify({'error': 'Hiba történt az email összeállítása során'}), 500
+
+        # Email küldés retry-val
+        try:
+            send_email_with_retry(msg)
+            logger.info(f"Email sikeresen elküldve: {recipient_email}")
+            return jsonify({'success': True, 'message': 'E-mail sikeresen elküldve'})
+
+        except Exception as e:
+            logger.error(f"Hiba az email küldésekor: {str(e)}")
+            return jsonify({'error': 'Hiba történt az email küldése során'}), 500
 
     except Exception as e:
-        logger.error(f"Hiba az e-mail küldése során: {str(e)}")
+        logger.error(f"Általános hiba: {str(e)}")
         return jsonify({'error': str(e)}), 500
-    
+
 @app.route('/network-test')
 def network_test():
     import socket
