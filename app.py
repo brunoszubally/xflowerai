@@ -316,8 +316,9 @@ def init_session():
         return make_response()
         
     try:
-        session['session_id'] = secrets.token_urlsafe(32)
-        response = jsonify({'session_id': session['session_id']})
+        session_id = secrets.token_urlsafe(32)
+        session['session_id'] = session_id
+        response = jsonify({'session_id': session_id})
         return response
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -326,19 +327,24 @@ def init_session():
 def chat():
     if request.method == "OPTIONS":
         return make_response()
+    
+    # Session ID ellenőrzése headerből
+    session_id = request.headers.get('X-Session-ID')
+    if not session_id:
+        return jsonify({'error': 'Hiányzó session ID'}), 401
         
-    if 'session_id' not in session:
-        return jsonify({'error': 'Érvénytelen session'}), 401
+    # Session ID beállítása
+    session['session_id'] = session_id
         
     try:
         data = request.get_json()
         user_message = data['message']
         
-        max_attempts = 3  # Maximum próbálkozások száma az SVG generálásra
+        max_attempts = 3
         attempt = 0
 
         while attempt < max_attempts:
-            thread_id, plantuml_code = generate_plantuml_with_assistant(user_message, session['session_id'])
+            thread_id, plantuml_code = generate_plantuml_with_assistant(user_message, session_id)  # session_id használata
             if not plantuml_code:
                 attempt += 1
                 continue
