@@ -150,7 +150,7 @@ def generate_plantuml_with_assistant(user_message, session_id):
             message = openai.beta.threads.messages.create(
                 thread_id=thread_id,
                 role="user",
-                content=f""" ALWAYS GIVE THE SAME LANGUAGE AS THE USERS INPUT! Create PlantUML Activity diagram code for this business process, ensuring the code strictly follows PlantUML syntax.   Only return the PlantUML code, which should include extra notes for steps. The output should be in in the input language, and return nothing else but the PlantUML code. Don't use swimlanes! Always remember and modify based on previous processes in one conversation!
+                content=f""" ALWAYS GIVE THE SAME LANGUAGE AS THE USERS INPUT!  Create PlantUML Activity diagram code for this business process, ensuring the code strictly follows PlantUML syntax.   Only return the PlantUML code, which should include extra PLANTUML notes for steps.  The output should be in in the input language, and return nothing else but the PlantUML code. Don't use swimlanes! Always remember and modify based on previous processes in one conversation!
 User input: {user_message}"""
             )
             logger.debug(f"OpenAI üzenet elküldve: {message}")
