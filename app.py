@@ -31,7 +31,7 @@ CORS(app,
          r"/*": {  # Minden útvonalra
              "origins": ["https://xflower.ai"],
              "methods": ["GET", "POST", "OPTIONS"],
-             "allow_headers": ["Content-Type"],
+             "allow_headers": ["Content-Type", "X-Session-ID"],
              "supports_credentials": True
          }
      })
