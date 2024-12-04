@@ -78,7 +78,7 @@ A4_HEIGHT = int(210 * 11.811)  # 210mm * (300/25.4)
 
 # Thread tárolás módosítása - hozzáadjunk időbélyeget és cleanup funkciót
 user_threads = {
-    # 'user_id': {'thread_id': 'xxx', 'last_used': datetime}
+    # 'session_id': {'thread_id': 'xxx', 'last_used': datetime}
 }
 thread_lock = Lock()
 
@@ -89,31 +89,33 @@ def cleanup_old_threads():
     """Régi thread-ek törlése"""
     current_time = datetime.now()
     with thread_lock:
-        for user_id in list(user_threads.keys()):
-            if current_time - user_threads[user_id]['last_used'] > timedelta(hours=THREAD_LIFETIME_HOURS):
+        for session_id in list(user_threads.keys()):
+            if current_time - user_threads[session_id]['last_used'] > timedelta(hours=THREAD_LIFETIME_HOURS):
                 try:
                     # OpenAI thread törlése
-                    openai.beta.threads.delete(user_threads[user_id]['thread_id'])
-                    logger.info(f"Thread törölve: {user_threads[user_id]['thread_id']} (user_id: {user_id})")
+                    openai.beta.threads.delete(user_threads[session_id]['thread_id'])
+                    logger.info(f"Thread törölve: {user_threads[session_id]['thread_id']} (session: {session_id})")
                 except Exception as e:
                     logger.error(f"Hiba a thread törlésekor: {str(e)}")
-                del user_threads[user_id]
+                del user_threads[session_id]
 
-def get_or_create_thread(user_id):
-    """Thread kezelése egy felhasználóhoz"""
+def get_or_create_thread(session_id):
+    """Thread kezelése egy session-höz"""
     with thread_lock:
-        if user_id in user_threads:
-            thread_data = user_threads[user_id]
+        if session_id in user_threads:
+            thread_data = user_threads[session_id]
             # Frissítjük az utolsó használat időpontját
             thread_data['last_used'] = datetime.now()
+            logger.debug(f"Meglévő thread használata: {thread_data['thread_id']} (session: {session_id})")
             return thread_data['thread_id']
         else:
             try:
                 thread = openai.beta.threads.create()
-                user_threads[user_id] = {
+                user_threads[session_id] = {
                     'thread_id': thread.id,
                     'last_used': datetime.now()
                 }
+                logger.debug(f"Új thread létrehozva: {thread.id} (session: {session_id})")
                 return thread.id
             except Exception as e:
                 logger.error(f"Hiba új thread létrehozásakor: {str(e)}")
@@ -131,11 +133,11 @@ def clean_plantuml_notes(plantuml_code):
             cleaned_lines.append(line)
     return '\n'.join(cleaned_lines)
 
-def generate_plantuml_with_assistant(user_input, user_id):
-    logger.debug(f"PlantUML generálás indítása: {user_input}, user_id: {user_id}")
+def generate_plantuml_with_assistant(user_message, session_id):
+    logger.debug(f"PlantUML generálás indítása: {user_message}, session: {session_id}")
 
-    # Thread kezelés
-    thread_id = get_or_create_thread(user_id)
+    # Thread kezelés session alapján
+    thread_id = get_or_create_thread(session_id)
     if not thread_id:
         return None, None
 
@@ -149,7 +151,7 @@ def generate_plantuml_with_assistant(user_input, user_id):
                 thread_id=thread_id,
                 role="user",
                 content=f""" ALWAYS GIVE THE SAME LANGUAGE AS THE USERS INPUT! Create PlantUML Activity diagram code for this business process, ensuring the code strictly follows PlantUML syntax.   Only return the PlantUML code, which should include extra notes for steps. The output should be in in the input language, and return nothing else but the PlantUML code. Don't use swimlanes! Always remember and modify based on previous processes in one conversation!
-User input: {user_input}"""
+User input: {user_message}"""
             )
             logger.debug(f"OpenAI üzenet elküldve: {message}")
 
@@ -332,10 +334,7 @@ def chat():
     session_id = request.headers.get('X-Session-ID')
     if not session_id:
         return jsonify({'error': 'Hiányzó session ID'}), 401
-        
-    # Session ID beállítása
-    session['session_id'] = session_id
-        
+    
     try:
         data = request.get_json()
         user_message = data['message']
@@ -344,11 +343,12 @@ def chat():
         attempt = 0
 
         while attempt < max_attempts:
-            thread_id, plantuml_code = generate_plantuml_with_assistant(user_message, session_id)  # session_id használata
+            # session_id használata a user_id helyett
+            thread_id, plantuml_code = generate_plantuml_with_assistant(user_message, session_id)
             if not plantuml_code:
                 attempt += 1
                 continue
-
+            
             encoded_uml = compress_and_encode_plantuml(plantuml_code)
             plantuml_url = f"http://www.plantuml.com/plantuml/svg/~1{encoded_uml}"
             
