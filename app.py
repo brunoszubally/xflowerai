@@ -50,7 +50,7 @@ def before_request():
         response = make_response()
         response.headers.update({
             "Access-Control-Allow-Origin": "https://xflower.ai",
-            "Access-Control-Allow-Headers": "Content-Type",  # Explicit Content-Type engedélyezés
+            "Access-Control-Allow-Headers": "Content-Type, X-Session-ID",
             "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
             "Access-Control-Allow-Credentials": "true"
         })
