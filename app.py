@@ -449,7 +449,8 @@ def chat():
                 # Sikeres generálás után mentsük el a történetet
                 conversation_history[session_id].append({
                     'prompt': user_message,
-                    'plantuml': plantuml_code
+                    'plantuml': plantuml_code,
+                    'image': f'data:image/jpeg;base64,{jpg_base64}'
                 })
                 
                 # Időzítő újraindítása
@@ -548,7 +549,7 @@ Köszönjük, hogy az xFLOWer.ai-t használtad a folyamatábra elkészítéséhe
 
 Az xFLOWer workflow platformmal villámgyorsan tudunk Neked működő, testreszabott folyamatokat létrehozni. Legyen szó bármilyen üzleti folyamatról, mi segítünk azt hatékonyan digitalizálni és automatizálni.
 
-Ha szeretnéd megtapasztalni, hogyan teheted még gördülékenyebb�� vállalkozásod működését, vedd fel velünk a kapcsolatot:
+Ha szeretnéd megtapasztalni, hogyan teheted még gördülékenyebb vállalkozásod működését, vedd fel velünk a kapcsolatot:
 
 Telefon: +36 1 469 0001
 E-mail: sales@xflower.hu
