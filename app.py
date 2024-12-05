@@ -26,14 +26,15 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = "supersecretkey123"
 
-# CORS beállítások egyszerűsítése
+# CORS beállítások módosítása
 CORS(app, 
      resources={
          r"/*": {  # Minden útvonalra
              "origins": ["https://xflower.ai"],
              "methods": ["GET", "POST", "OPTIONS"],
              "allow_headers": ["Content-Type", "X-Session-ID"],
-             "supports_credentials": True
+             "supports_credentials": True,
+             "allow_redirects": False  # Preflight kérések átirányításának tiltása
          }
      })
 
@@ -47,19 +48,20 @@ app.config.update(
 
 @app.before_request
 def before_request():
-    # HTTPS kényszerítése
-    if not request.is_secure and request.url.startswith('http://'):
+    # HTTPS kényszerítése csak nem-OPTIONS kéréseknél
+    if request.method != "OPTIONS" and not request.is_secure and request.url.startswith('http://'):
         url = request.url.replace('http://', 'https://', 1)
         return redirect(url, code=301)
 
-    # Eredeti CORS kezelés
+    # CORS headers minden válaszhoz
     if request.method == "OPTIONS":
         response = make_response()
         response.headers.update({
             "Access-Control-Allow-Origin": "https://xflower.ai",
-            "Access-Control-Allow-Headers": "Content-Type, X-Session-ID",
             "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-            "Access-Control-Allow-Credentials": "true"
+            "Access-Control-Allow-Headers": "Content-Type, X-Session-ID",
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Max-Age": "3600"  # Preflight cache idő
         })
         return response
 
