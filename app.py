@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, make_response, session
+from flask import Flask, request, jsonify, make_response, session, redirect
 from flask_cors import CORS
 import openai
 import time
@@ -46,6 +46,12 @@ app.config.update(
 
 @app.before_request
 def before_request():
+    # HTTPS kényszerítése
+    if not request.is_secure and request.url.startswith('http://'):
+        url = request.url.replace('http://', 'https://', 1)
+        return redirect(url, code=301)
+
+    # Eredeti CORS kezelés
     if request.method == "OPTIONS":
         response = make_response()
         response.headers.update({
