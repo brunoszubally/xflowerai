@@ -14,6 +14,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.image import MIMEImage
+from email.mime.application import MIMEApplication
 from threading import Lock, Timer
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
@@ -547,7 +548,7 @@ Köszönjük, hogy az xFLOWer.ai-t használtad a folyamatábra elkészítéséhe
 
 Az xFLOWer workflow platformmal villámgyorsan tudunk Neked működő, testreszabott folyamatokat létrehozni. Legyen szó bármilyen üzleti folyamatról, mi segítünk azt hatékonyan digitalizálni és automatizálni.
 
-Ha szeretnéd megtapasztalni, hogyan teheted még gördülékenyebbé vállalkozásod működését, vedd fel velünk a kapcsolatot:
+Ha szeretnéd megtapasztalni, hogyan teheted még gördülékenyebb�� vállalkozásod működését, vedd fel velünk a kapcsolatot:
 
 Telefon: +36 1 469 0001
 E-mail: sales@xflower.hu
