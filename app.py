@@ -25,24 +25,22 @@ from fpdf import FPDF
 load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY", "supersecretkey123")
+app.secret_key = "supersecretkey123"
+
+# CORS beállítások egyszerűsítése
+CORS(app, 
+     origins=["https://xflower.ai"],
+     methods=["GET", "POST", "OPTIONS"],
+     allow_headers=["Content-Type", "X-Session-ID"],
+     supports_credentials=True)
 
 # Session konfiguráció
 app.config.update(
     SESSION_COOKIE_SECURE=True,
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='None',
-    SESSION_COOKIE_NAME='xflower_session',
-    PERMANENT_SESSION_LIFETIME=timedelta(hours=24)
+    SESSION_COOKIE_NAME='xflower_session'
 )
-
-# CORS beállítások
-CORS(app, 
-     origins=["https://xflower.ai"],
-     methods=["GET", "POST", "OPTIONS"],
-     allow_headers=["Content-Type", "X-Session-ID"],
-     supports_credentials=True,
-     expose_headers=["Set-Cookie"])
 
 # Környezeti változók (Most már a .env fájlból töltődnek be)
 SMTP_SERVER = os.getenv("SMTP_SERVER")
@@ -383,18 +381,10 @@ def init_session():
         
     try:
         session_id = secrets.token_urlsafe(32)
-        session['session_id'] = session_id  # Session cookie beállítása
-        
-        response = make_response(jsonify({'session_id': session_id}))
-        response.headers.update({
-            'Access-Control-Allow-Credentials': 'true',
-            'Access-Control-Allow-Origin': 'https://xflower.ai'
-        })
-        
+        session['session_id'] = session_id
+        response = jsonify({'session_id': session_id})
         return response
-        
     except Exception as e:
-        logger.error(f"Session inicializálási hiba: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/chat', methods=['POST', 'OPTIONS'])
@@ -411,7 +401,7 @@ def chat():
         data = request.get_json()
         user_message = data['message']
         
-        # Beszélgetés történet frissítése
+        # Beszélgetés történet inicializálása, ha még nem létezik
         if session_id not in conversation_history:
             conversation_history[session_id] = []
         
@@ -419,7 +409,6 @@ def chat():
         attempt = 0
 
         while attempt < max_attempts:
-            # session_id használata a user_id helyett
             thread_id, plantuml_code = generate_plantuml_with_assistant(user_message, session_id)
             if not plantuml_code:
                 attempt += 1
@@ -430,19 +419,11 @@ def chat():
             
             response = requests.get(plantuml_url)
             if response.status_code != 200:
-                logger.warning(f"SVG lekérési hiba (Próbálkozás {attempt + 1}/{max_attempts})")
                 attempt += 1
-                time.sleep(2)
                 continue
 
             try:
-                # Ellenőrizzük, hogy érvényes SVG-e
-                if not response.text.strip().startswith('<?xml') and not response.text.strip().startswith('<svg'):
-                    logger.warning(f"Érvénytelen SVG válasz (Próbálkozás {attempt + 1}/{max_attempts})")
-                    attempt += 1
-                    continue
-
-                # SVG konvertálása nagy felbontású PNG-vé
+                # SVG konvertálása PNG-vé
                 png_data = BytesIO()
                 cairosvg.svg2png(
                     bytestring=response.text.encode('utf-8'),
@@ -455,18 +436,20 @@ def chat():
                 
                 # Base64 kódolás
                 jpg_base64 = base64.b64encode(png_data.getvalue()).decode('utf-8')
+                image_data = f'data:image/jpeg;base64,{jpg_base64}'
                 
-                # Sikeres generálás után mentsük el a történetet
+                # Beszélgetés történet frissítése a képpel együtt
                 conversation_history[session_id].append({
                     'prompt': user_message,
-                    'plantuml': plantuml_code
+                    'plantuml': plantuml_code,
+                    'image': image_data  # Kép mentése base64 formátumban
                 })
                 
                 # Időzítő újraindítása
                 reset_inactivity_timer(session_id)
                 
                 return jsonify({
-                    'image': f'data:image/jpeg;base64,{jpg_base64}',
+                    'image': image_data,
                     'thread_id': thread_id
                 })
 
