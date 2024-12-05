@@ -597,7 +597,7 @@ def network_test():
     except socket.gaierror as e:
         results['dns_resolution'] = f"DNS feloldási hiba: {e}"
 
-    # HTTPS k��rés tesztelése
+    # HTTPS kérés tesztelése
     try:
         response = requests.get('https://api.openai.com/v1')
         results['http_request'] = f"HTTP válasz kód: {response.status_code}"
@@ -606,6 +606,41 @@ def network_test():
 
     return jsonify(results)
 
+@app.route('/end-session', methods=['POST', 'OPTIONS'])
+def end_session():
+    if request.method == "OPTIONS":
+        return make_response()
+    
+    try:
+        session_id = request.headers.get('X-Session-ID')
+        if not session_id:
+            return jsonify({'error': 'Hiányzó session ID'}), 401
+            
+        # Időzítő leállítása és törlése
+        if session_id in conversation_timers:
+            conversation_timers[session_id].cancel()
+            del conversation_timers[session_id]
+            
+        # Beszélgetés történet törlése
+        if session_id in conversation_history:
+            del conversation_history[session_id]
+            
+        # Thread törlése
+        if session_id in user_threads:
+            try:
+                openai.beta.threads.delete(user_threads[session_id]['thread_id'])
+            except Exception as e:
+                logger.error(f"Hiba a thread törlésekor: {str(e)}")
+            del user_threads[session_id]
+            
+        # Session törlése
+        session.clear()
+        
+        return jsonify({'success': True, 'message': 'Session sikeresen lezárva'})
+        
+    except Exception as e:
+        logger.error(f"Hiba a session lezárásakor: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True) 
