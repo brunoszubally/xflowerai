@@ -14,10 +14,11 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.image import MIMEImage
-from threading import Lock
+from threading import Lock, Timer
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 import secrets
+from fpdf import FPDF
 
 # Környezeti változók betöltéses
 load_dotenv()
@@ -70,6 +71,8 @@ SMTP_PASS = os.getenv("SMTP_PASS")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ASSISTANT_ID = os.getenv("ASSISTANT_ID")
 BCC_EMAIL = os.getenv("BCC_EMAIL")
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL")
+INACTIVITY_TIMEOUT = 600  # 10 perc másodpercekben
 
 # OpenAI beállítások
 openai.api_key = OPENAI_API_KEY
@@ -90,6 +93,10 @@ thread_lock = Lock()
 
 # Konstans a thread élettartamához
 THREAD_LIFETIME_HOURS = 24
+
+# Új globális változók
+conversation_timers = {}
+conversation_history = {}
 
 def cleanup_old_threads():
     """Régi thread-ek törlése"""
@@ -318,6 +325,73 @@ def create_a4_image(image_data, recipient_name):
 
     return a4_image
 
+def create_pdf_report(session_id):
+    """PDF jelentés készítése a beszélgetés történetéből"""
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.add_font('Montserrat', '', 'Montserrat-Regular.ttf', uni=True)
+    pdf.set_font('Montserrat', size=12)
+    
+    if session_id in conversation_history:
+        history = conversation_history[session_id]
+        pdf.cell(0, 10, f'Beszélgetés jelentés - {datetime.now().strftime("%Y-%m-%d %H:%M")}', ln=True)
+        pdf.ln(10)
+        
+        for idx, entry in enumerate(history, 1):
+            pdf.cell(0, 10, f'Prompt {idx}:', ln=True)
+            pdf.multi_cell(0, 10, entry['prompt'])
+            pdf.ln(5)
+            pdf.cell(0, 10, 'PlantUML kód:', ln=True)
+            pdf.multi_cell(0, 10, entry['plantuml'])
+            pdf.ln(10)
+    
+    output = BytesIO()
+    pdf.output(output)
+    return output.getvalue()
+
+def send_inactivity_email(session_id):
+    """E-mail küldése inaktivitás esetén"""
+    try:
+        pdf_content = create_pdf_report(session_id)
+        
+        msg = MIMEMultipart()
+        msg['From'] = SMTP_USER
+        msg['To'] = ADMIN_EMAIL
+        msg['Subject'] = f"Inaktív beszélgetés jelentés - {session_id}"
+        
+        body = f"""
+        Egy beszélgetés 10 perce inaktív.
+        Session ID: {session_id}
+        Utolsó aktivitás: {datetime.now() - timedelta(seconds=INACTIVITY_TIMEOUT)}
+        """
+        
+        msg.attach(MIMEText(body, 'plain'))
+        
+        pdf_attachment = MIMEApplication(pdf_content, _subtype="pdf")
+        pdf_attachment.add_header('Content-Disposition', 'attachment', filename=f'conversation_{session_id}.pdf')
+        msg.attach(pdf_attachment)
+        
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SMTP_USER, SMTP_PASS)
+            server.send_message(msg)
+            
+        logger.info(f"Inaktivitási e-mail elküldve: {session_id}")
+        
+    except Exception as e:
+        logger.error(f"Hiba az inaktivitási e-mail küldésekor: {str(e)}")
+
+def reset_inactivity_timer(session_id):
+    """Időzítő újraindítása vagy létrehozása"""
+    # Előző időzítő törlése, ha létezik
+    if session_id in conversation_timers:
+        conversation_timers[session_id].cancel()
+    
+    # Új időzítő létrehozása
+    timer = Timer(INACTIVITY_TIMEOUT, send_inactivity_email, args=[session_id])
+    timer.start()
+    conversation_timers[session_id] = timer
+
 @app.route('/init-session', methods=['POST', 'OPTIONS'])
 def init_session():
     if request.method == "OPTIONS":
@@ -344,6 +418,10 @@ def chat():
     try:
         data = request.get_json()
         user_message = data['message']
+        
+        # Beszélgetés történet frissítése
+        if session_id not in conversation_history:
+            conversation_history[session_id] = []
         
         max_attempts = 3
         attempt = 0
@@ -385,6 +463,15 @@ def chat():
                 
                 # Base64 kódolás
                 jpg_base64 = base64.b64encode(png_data.getvalue()).decode('utf-8')
+                
+                # Sikeres generálás után mentsük el a történetet
+                conversation_history[session_id].append({
+                    'prompt': user_message,
+                    'plantuml': plantuml_code
+                })
+                
+                # Időzítő újraindítása
+                reset_inactivity_timer(session_id)
                 
                 return jsonify({
                     'image': f'data:image/jpeg;base64,{jpg_base64}',

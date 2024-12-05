@@ -1,9 +1,8 @@
-openai
-Flask
+flask
 flask-cors
-requests
+openai
 Pillow
-cairosvg
 python-dotenv
-dnspython
-tenacity
+requests
+cairosvg
+fpdf
