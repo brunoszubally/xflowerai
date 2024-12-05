@@ -48,11 +48,6 @@ app.config.update(
 
 @app.before_request
 def before_request():
-    # HTTPS kényszerítése csak nem-OPTIONS kéréseknél
-    if request.method != "OPTIONS" and not request.is_secure and request.url.startswith('http://'):
-        url = request.url.replace('http://', 'https://', 1)
-        return redirect(url, code=301)
-
     # CORS headers minden válaszhoz
     if request.method == "OPTIONS":
         response = make_response()
@@ -119,7 +114,7 @@ def get_or_create_thread(session_id):
     with thread_lock:
         if session_id in user_threads:
             thread_data = user_threads[session_id]
-            # Frissítjük az utolsó használat időpontját
+            # Frissítjük az utolsó haszn��lat időpontját
             thread_data['last_used'] = datetime.now()
             logger.debug(f"Meglévő thread használata: {thread_data['thread_id']} (session: {session_id})")
             return thread_data['thread_id']
