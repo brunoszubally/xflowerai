@@ -25,22 +25,24 @@ from fpdf import FPDF
 load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = "supersecretkey123"
-
-# CORS beállítások egyszerűsítése
-CORS(app, 
-     origins=["https://xflower.ai"],
-     methods=["GET", "POST", "OPTIONS"],
-     allow_headers=["Content-Type", "X-Session-ID"],
-     supports_credentials=True)
+app.secret_key = os.getenv("SECRET_KEY", "supersecretkey123")
 
 # Session konfiguráció
 app.config.update(
     SESSION_COOKIE_SECURE=True,
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='None',
-    SESSION_COOKIE_NAME='xflower_session'
+    SESSION_COOKIE_NAME='xflower_session',
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=24)
 )
+
+# CORS beállítások
+CORS(app, 
+     origins=["https://xflower.ai"],
+     methods=["GET", "POST", "OPTIONS"],
+     allow_headers=["Content-Type", "X-Session-ID"],
+     supports_credentials=True,
+     expose_headers=["Set-Cookie"])
 
 # Környezeti változók (Most már a .env fájlból töltődnek be)
 SMTP_SERVER = os.getenv("SMTP_SERVER")
@@ -381,10 +383,18 @@ def init_session():
         
     try:
         session_id = secrets.token_urlsafe(32)
-        session['session_id'] = session_id
-        response = jsonify({'session_id': session_id})
+        session['session_id'] = session_id  # Session cookie beállítása
+        
+        response = make_response(jsonify({'session_id': session_id}))
+        response.headers.update({
+            'Access-Control-Allow-Credentials': 'true',
+            'Access-Control-Allow-Origin': 'https://xflower.ai'
+        })
+        
         return response
+        
     except Exception as e:
+        logger.error(f"Session inicializálási hiba: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/chat', methods=['POST', 'OPTIONS'])
@@ -449,8 +459,7 @@ def chat():
                 # Sikeres generálás után mentsük el a történetet
                 conversation_history[session_id].append({
                     'prompt': user_message,
-                    'plantuml': plantuml_code,
-                    'image': f'data:image/jpeg;base64,{jpg_base64}'
+                    'plantuml': plantuml_code
                 })
                 
                 # Időzítő újraindítása
