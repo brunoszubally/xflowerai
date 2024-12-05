@@ -26,17 +26,12 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = "supersecretkey123"
 
-# CORS beállítások módosítása
+# CORS beállítások egyszerűsítése
 CORS(app, 
-     resources={
-         r"/*": {  # Minden útvonalra
-             "origins": ["https://xflower.ai"],
-             "methods": ["GET", "POST", "OPTIONS"],
-             "allow_headers": ["Content-Type", "X-Session-ID"],
-             "supports_credentials": True,
-             "allow_redirects": False  # Preflight kérések átirányításának tiltása
-         }
-     })
+     origins=["https://xflower.ai"],
+     methods=["GET", "POST", "OPTIONS"],
+     allow_headers=["Content-Type", "X-Session-ID"],
+     supports_credentials=True)
 
 # Session konfiguráció
 app.config.update(
@@ -45,20 +40,6 @@ app.config.update(
     SESSION_COOKIE_SAMESITE='None',
     SESSION_COOKIE_NAME='xflower_session'
 )
-
-@app.before_request
-def before_request():
-    # CORS headers minden válaszhoz
-    if request.method == "OPTIONS":
-        response = make_response()
-        response.headers.update({
-            "Access-Control-Allow-Origin": "https://xflower.ai",
-            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, X-Session-ID",
-            "Access-Control-Allow-Credentials": "true",
-            "Access-Control-Max-Age": "3600"  # Preflight cache idő
-        })
-        return response
 
 # Környezeti változók (Most már a .env fájlból töltődnek be)
 SMTP_SERVER = os.getenv("SMTP_SERVER")
@@ -114,7 +95,7 @@ def get_or_create_thread(session_id):
     with thread_lock:
         if session_id in user_threads:
             thread_data = user_threads[session_id]
-            # Frissítjük az utolsó haszn��lat időpontját
+            # Frissítjük az utolsó hasznlat időpontját
             thread_data['last_used'] = datetime.now()
             logger.debug(f"Meglévő thread használata: {thread_data['thread_id']} (session: {session_id})")
             return thread_data['thread_id']
