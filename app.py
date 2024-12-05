@@ -307,8 +307,11 @@ def create_pdf_report(session_id):
     """PDF jelentés készítése a beszélgetés történetéből"""
     pdf = FPDF()
     pdf.add_page()
-    pdf.add_font('Montserrat', '', 'Montserrat-Regular.ttf', uni=True)
-    pdf.set_font('Montserrat', size=12)
+    try:
+        pdf.add_font('Montserrat', '', 'Montserrat-Regular.ttf', uni=True)
+        pdf.set_font('Montserrat', size=12)
+    except:
+        pdf.set_font('Arial', size=12)  # Fallback font
     
     if session_id in conversation_history:
         history = conversation_history[session_id]
@@ -317,15 +320,14 @@ def create_pdf_report(session_id):
         
         for idx, entry in enumerate(history, 1):
             pdf.cell(0, 10, f'Prompt {idx}:', ln=True)
-            pdf.multi_cell(0, 10, entry['prompt'])
+            pdf.multi_cell(0, 10, str(entry['prompt']))
             pdf.ln(5)
             pdf.cell(0, 10, 'PlantUML kód:', ln=True)
-            pdf.multi_cell(0, 10, entry['plantuml'])
+            pdf.multi_cell(0, 10, str(entry['plantuml']))
             pdf.ln(10)
     
-    output = BytesIO()
-    pdf.output(output)
-    return output.getvalue()
+    # BytesIO helyett közvetlenül a PDF tartalmát adjuk vissza
+    return pdf.output(dest='S').encode('latin-1')
 
 def send_inactivity_email(session_id):
     """E-mail küldése inaktivitás esetén"""
@@ -345,7 +347,8 @@ def send_inactivity_email(session_id):
         
         msg.attach(MIMEText(body, 'plain'))
         
-        pdf_attachment = MIMEApplication(pdf_content, _subtype="pdf")
+        # PDF csatolása
+        pdf_attachment = MIMEApplication(pdf_content, _subtype='pdf')
         pdf_attachment.add_header('Content-Disposition', 'attachment', filename=f'conversation_{session_id}.pdf')
         msg.attach(pdf_attachment)
         
@@ -594,7 +597,7 @@ def network_test():
     except socket.gaierror as e:
         results['dns_resolution'] = f"DNS feloldási hiba: {e}"
 
-    # HTTPS kérés tesztelése
+    # HTTPS k��rés tesztelése
     try:
         response = requests.get('https://api.openai.com/v1')
         results['http_request'] = f"HTTP válasz kód: {response.status_code}"
