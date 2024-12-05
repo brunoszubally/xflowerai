@@ -50,7 +50,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ASSISTANT_ID = os.getenv("ASSISTANT_ID")
 BCC_EMAIL = os.getenv("BCC_EMAIL")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL")
-INACTIVITY_TIMEOUT = 600  # 10 perc másodpercekben
+INACTIVITY_TIMEOUT = 30  # 10 perc másodpercekben
 
 # OpenAI beállítások
 openai.api_key = OPENAI_API_KEY
