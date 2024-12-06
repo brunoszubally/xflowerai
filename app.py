@@ -307,27 +307,51 @@ def create_a4_image(image_data, recipient_name):
 def create_pdf_report(session_id):
     """PDF jelentés készítése a beszélgetés történetéből"""
     pdf = FPDF()
-    pdf.add_page()
-    try:
-        pdf.add_font('Montserrat', '', 'Montserrat-Regular.ttf', uni=True)
-        pdf.set_font('Montserrat', size=12)
-    except:
-        pdf.set_font('Arial', size=12)  # Fallback font
     
     if session_id in conversation_history:
         history = conversation_history[session_id]
-        pdf.cell(0, 10, f'Beszélgetés jelentés - {datetime.now().strftime("%Y-%m-%d %H:%M")}', ln=True)
-        pdf.ln(10)
         
         for idx, entry in enumerate(history, 1):
-            pdf.cell(0, 10, f'Prompt {idx}:', ln=True)
+            pdf.add_page()
+            try:
+                pdf.add_font('Montserrat', '', 'Montserrat-Regular.ttf', uni=True)
+                pdf.set_font('Montserrat', size=12)
+            except:
+                pdf.set_font('Arial', size=12)  # Fallback font
+            
+            # Fejléc
+            pdf.cell(0, 10, f'Folyamat {idx} - {datetime.now().strftime("%Y-%m-%d %H:%M")}', ln=True)
+            pdf.ln(5)
+            
+            # Prompt
+            pdf.cell(0, 10, 'Felhasználói kérés:', ln=True)
             pdf.multi_cell(0, 10, str(entry['prompt']))
             pdf.ln(5)
-            pdf.cell(0, 10, 'PlantUML kód:', ln=True)
-            pdf.multi_cell(0, 10, str(entry['plantuml']))
+            
+            # Diagram kép
+            if 'image' in entry:
+                try:
+                    # Base64 kép dekódolása
+                    image_data = entry['image'].split('base64,')[1]
+                    image_bytes = base64.b64decode(image_data)
+                    
+                    # Ideiglenes fájl létrehozása a képnek
+                    temp_image_path = f'temp_diagram_{idx}.png'
+                    with open(temp_image_path, 'wb') as f:
+                        f.write(image_bytes)
+                    
+                    # Kép hozzáadása a PDF-hez
+                    page_width = pdf.w - 20  # Margók
+                    pdf.image(temp_image_path, x=10, y=pdf.get_y(), w=page_width)
+                    
+                    # Ideiglenes fájl törlése
+                    os.remove(temp_image_path)
+                except Exception as e:
+                    logger.error(f"Hiba a kép PDF-be illesztésekor: {str(e)}")
+                    pdf.multi_cell(0, 10, "Hiba történt a diagram betöltésekor")
+            
             pdf.ln(10)
     
-    # BytesIO helyett közvetlenül a PDF tartalmát adjuk vissza
     return pdf.output(dest='S').encode('latin-1')
 
 def send_inactivity_email(session_id):
