@@ -51,7 +51,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ASSISTANT_ID = os.getenv("ASSISTANT_ID")
 BCC_EMAIL = os.getenv("BCC_EMAIL")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL")
-INACTIVITY_TIMEOUT = 30  # 10 perc másodpercekben
+INACTIVITY_TIMEOUT = 600  # 10 perc másodpercekben
 
 # OpenAI beállítások
 openai.api_key = OPENAI_API_KEY
@@ -173,9 +173,15 @@ User input: {user_message}"""
             assistant_response = response.data[0].content[0].text.value
             logger.debug(f"Asszisztens válasza: {assistant_response}")
             
-            # Ellenőrizzük, hogy tartalmazza-e az @enduml részt
-            if "@enduml" not in assistant_response:
-                logger.warning("Hiányzó @enduml a válaszból, újrapróbálkozás...")
+            # PlantUML kód validáció
+            if not "@startuml" in assistant_response or not "@enduml" in assistant_response:
+                logger.warning("Hiányzó @startuml vagy @enduml a válaszból, újrapróbálkozás...")
+                attempt += 1
+                continue
+
+            # További PlantUML szintaxis ellenőrzések
+            if not "start" in assistant_response.lower() or not "stop" in assistant_response.lower():
+                logger.warning("Hiányzó start/stop elemek a PlantUML kódból, újrapróbálkozás...")
                 attempt += 1
                 continue
 
@@ -462,7 +468,7 @@ def chat():
                 jpg_base64 = base64.b64encode(png_data.getvalue()).decode('utf-8')
                 image_data = f'data:image/jpeg;base64,{jpg_base64}'
                 
-                # Beszélgetés történet frissítése a képpel együtt
+                # Beszélgetés történet frissítése a k��ppel együtt
                 conversation_history[session_id].append({
                     'prompt': user_message,
                     'plantuml': plantuml_code,
@@ -499,7 +505,7 @@ def send_email():
         if not all([recipient_name, recipient_email, image_data]):
             return jsonify({'error': 'Hiányzó adatok'}), 400
 
-        # A4-es kép létrehozása
+        # A4-es kép l��trehozása
         a4_image = create_a4_image(image_data, recipient_name)
         
         # Kép mentése BytesIO objektumba
