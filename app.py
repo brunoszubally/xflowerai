@@ -44,13 +44,14 @@ app.config.update(
 
 # Környezeti változók (Most már a .env fájlból töltődnek be)
 SMTP_SERVER = os.getenv("SMTP_SERVER")
-SMTP_PORT = int(os.getenv("SMTP_PORT", 587))  # Alapértelmezett érték megadása
+SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
 SMTP_USER = os.getenv("SMTP_USER")
 SMTP_PASS = os.getenv("SMTP_PASS")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ASSISTANT_ID = os.getenv("ASSISTANT_ID")
 BCC_EMAIL = os.getenv("BCC_EMAIL")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL")
+ERROR_EMAIL = os.getenv("ERROR_EMAIL")
 INACTIVITY_TIMEOUT = 600  # 10 perc másodpercekben
 
 # OpenAI beállítások
@@ -368,10 +369,9 @@ def send_inactivity_email(session_id):
         msg = MIMEMultipart()
         msg['From'] = SMTP_USER
         msg['To'] = ADMIN_EMAIL
-        msg['Subject'] = f"Inaktív beszélgetés jelentés - {session_id}"
+        msg['Subject'] = f"xflower.ai - beszélgetés kivonata"
         
         body = f"""
-        Egy beszélgetés 10 perce inaktív.
         Session ID: {session_id}
         Utolsó aktivitás: {datetime.now() - timedelta(seconds=INACTIVITY_TIMEOUT)}
         """
@@ -404,6 +404,38 @@ def reset_inactivity_timer(session_id):
     timer.start()
     conversation_timers[session_id] = timer
 
+def send_error_email(error_message, endpoint=None, session_id=None):
+    """Hibaüzenet küldése e-mailben"""
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = SMTP_USER
+        msg['To'] = ERROR_EMAIL
+        msg['Subject'] = f"xFLOWer.ai - Hiba történt"
+
+        html = f"""
+        <html>
+        <body>
+            <h2>Hiba történt az xFLOWer.ai alkalmazásban</h2>
+            <p><strong>Időpont:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+            <p><strong>Végpont:</strong> {endpoint or 'Ismeretlen'}</p>
+            <p><strong>Session ID:</strong> {session_id or 'Ismeretlen'}</p>
+            <p><strong>Hibaüzenet:</strong></p>
+            <pre>{error_message}</pre>
+        </body>
+        </html>
+        """
+
+        msg.attach(MIMEText(html, 'html'))
+
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SMTP_USER, SMTP_PASS)
+            server.send_message(msg)
+            
+        logger.info("Hibaértesítő e-mail elküldve")
+    except Exception as e:
+        logger.error(f"Hiba a hibaértesítő e-mail küldésekor: {str(e)}")
+
 @app.route('/init-session', methods=['POST', 'OPTIONS'])
 def init_session():
     if request.method == "OPTIONS":
@@ -415,14 +447,16 @@ def init_session():
         response = jsonify({'session_id': session_id})
         return response
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        error_msg = str(e)
+        logger.error(f"Hiba történt: {error_msg}")
+        send_error_email(error_msg, endpoint='/init-session')
+        return jsonify({'error': error_msg}), 500
 
 @app.route('/chat', methods=['POST', 'OPTIONS'])
 def chat():
     if request.method == "OPTIONS":
         return make_response()
     
-    # Session ID ellenőrzése headerből
     session_id = request.headers.get('X-Session-ID')
     if not session_id:
         return jsonify({'error': 'Hiányzó session ID'}), 401
@@ -468,7 +502,7 @@ def chat():
                 jpg_base64 = base64.b64encode(png_data.getvalue()).decode('utf-8')
                 image_data = f'data:image/jpeg;base64,{jpg_base64}'
                 
-                # Beszélgetés történet frissítése a k��ppel együtt
+                # Beszélgetés történet frissítése a képpel együtt
                 conversation_history[session_id].append({
                     'prompt': user_message,
                     'plantuml': plantuml_code,
@@ -491,8 +525,10 @@ def chat():
         return jsonify({'error': 'Nem sikerült érvényes diagramot generálni többszöri próbálkozás után sem.'}), 500
 
     except Exception as e:
-        logger.error(f"Hiba történt: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        error_msg = str(e)
+        logger.error(f"Hiba történt: {error_msg}")
+        send_error_email(error_msg, endpoint='/chat', session_id=session_id)
+        return jsonify({'error': error_msg}), 500
 
 @app.route('/send-email', methods=['POST'])
 def send_email():
@@ -505,7 +541,7 @@ def send_email():
         if not all([recipient_name, recipient_email, image_data]):
             return jsonify({'error': 'Hiányzó adatok'}), 400
 
-        # A4-es kép l��trehozása
+        # A4-es kép létrehozása
         a4_image = create_a4_image(image_data, recipient_name)
         
         # Kép mentése BytesIO objektumba
@@ -605,30 +641,38 @@ https://xflower.hu
         return jsonify({'success': True, 'message': 'E-mail sikeresen elküldve'})
 
     except Exception as e:
-        logger.error(f"Hiba az e-mail küldése során: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        error_msg = str(e)
+        logger.error(f"Hiba az e-mail küldése során: {error_msg}")
+        send_error_email(error_msg, endpoint='/send-email')
+        return jsonify({'error': error_msg}), 500
     
 @app.route('/network-test')
 def network_test():
-    import socket
-    import requests
-    results = {}
-
-    # DNS feloldás tesztelése
     try:
-        ip = socket.gethostbyname('api.openai.com')
-        results['dns_resolution'] = f"Az api.openai.com IP címe: {ip}"
-    except socket.gaierror as e:
-        results['dns_resolution'] = f"DNS feloldási hiba: {e}"
+        import socket
+        import requests
+        results = {}
 
-    # HTTPS kérés tesztelése
-    try:
-        response = requests.get('https://api.openai.com/v1')
-        results['http_request'] = f"HTTP válasz kód: {response.status_code}"
-    except requests.exceptions.RequestException as e:
-        results['http_request'] = f"HTTP kérés hiba: {e}"
+        # DNS feloldás tesztelése
+        try:
+            ip = socket.gethostbyname('api.openai.com')
+            results['dns_resolution'] = f"Az api.openai.com IP címe: {ip}"
+        except socket.gaierror as e:
+            results['dns_resolution'] = f"DNS feloldási hiba: {e}"
 
-    return jsonify(results)
+        # HTTPS kérés tesztelése
+        try:
+            response = requests.get('https://api.openai.com/v1')
+            results['http_request'] = f"HTTP válasz kód: {response.status_code}"
+        except requests.exceptions.RequestException as e:
+            results['http_request'] = f"HTTP kérés hiba: {e}"
+
+        return jsonify(results)
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Hiba a hálózati teszt során: {error_msg}")
+        send_error_email(error_msg, endpoint='/network-test')
+        return jsonify({'error': error_msg}), 500
 
 @app.route('/end-session', methods=['POST', 'OPTIONS'])
 def end_session():
@@ -663,8 +707,10 @@ def end_session():
         return jsonify({'success': True, 'message': 'Session sikeresen lezárva'})
         
     except Exception as e:
-        logger.error(f"Hiba a session lezárásakor: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        error_msg = str(e)
+        logger.error(f"Hiba a session lezárásakor: {error_msg}")
+        send_error_email(error_msg, endpoint='/end-session', session_id=session_id)
+        return jsonify({'error': error_msg}), 500
 
 if __name__ == '__main__':
     app.run(debug=True) 
