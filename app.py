@@ -575,7 +575,7 @@ def send_email():
         
         <p>Örömmel értesítünk, hogy a folyamatábrád elkészült, melyet ezen e-mail csatolmányaként küldünk el Neked.</p>
         
-        <p>Az <strong>xFLOWer workflow platformmal</strong> villámgyorsan tudunk Neked működő, testreszabott folyamatokat létrehozni. Legyen szó bármilyen zleti folyamatról, mi segítünk azt hatékonyan digitalizálni és automatizálni.</p>
+        <p>Az <strong>xFLOWer workflow platformmal</strong> villámgyorsan tudunk Neked működő, testreszabott folyamatokat létrehozni. Legyen szó bármilyen Üzleti folyamatról, mi segítünk azt hatékonyan digitalizálni és automatizálni.</p>
         
         <p>Ha szeretnéd megtapasztalni, hogyan teheted még gördülékenyebbé vállalkozásod működését, vedd fel velünk a kapcsolatot:</p>
         

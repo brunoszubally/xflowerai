@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>xFLOWer.ai - Folyamatgenerálás</title>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+</head>
+<body>
+    <div id="main-container">
+        <div id="chat" class="resizable">
+            <h2>Folyamat generálása</h2>
+            <div id="messages"></div>
+            <div id="input-container">
+                <textarea id="input" rows="4" placeholder="Példa: Készíts egy átfogó számlajóváhagyási folyamatot, amely integrálja az ERP-t és a NAV-online rendszert, figyelembe véve a költséghely alapú jóváhagyást." maxlength="500"></textarea>
+                <button id="send-button">Küldés</button>
+            </div>
+        </div>
+        
+        <div id="diagram" class="resizable">
+            <div id="info-box" class="info-box">
+                Ez az xFLOWer.ai eszköze: mondd el egyszerűen, mit szeretnél, és mi elkészítjük neked a folyamatábrát – gyorsan, könnyedén, AI segítségével!
+            </div>
+            <div class="zoom-controls" style="display: none;">
+                <input type="range" id="zoom-slider" min="50" max="200" value="100">
+                <span id="zoom-value">100%</span>
+            </div>
+            <div class="diagram-container">
+                <div id="svg-container" class="draggable"></div>
+                <div id="loading-container" style="display: none;">
+                    <div class="spinner"></div>
+                    <div id="loading-text"></div>
+                </div>
+                <div class="diagram-buttons" style="display: none;">
+                    <button id="send-email-button" class="diagram-button">Küldés e-mailben</button>
+                    <button id="export-button" class="diagram-button" disabled>
+                        <i class="fas fa-lock lock-icon"></i>
+                        Export to xFLOWer
+                    </button>
+                </div>
+            </div>
+            <button id="download-button" style="display: none;">Letöltés JPG-ként</button>
+        </div>
+    </div>
+
+    <canvas id="canvas" style="display: none;"></canvas>
+    
+    <div class="footer">
+        <a href="https://xflower.hu" target="_blank">
+            <img src="logo2.png" alt="xFLOWer.ai Logo" id="logo">
+        </a>
+        <p class="disclaimer">
+            Az xflower.ai alkalmazás válaszai mesterséges intelligencián alapulnak, és nem feltétlenül tükrözik a CLICK ON HUNGARY Kft. hivatalos álláspontját. Az esetleges pontatlanságokért a CLICK ON HUNGARY Kft. nem vállal felelősséget.
+        </p>
+    </div>
+
+    <!-- Modal -->
+    <div id="email-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-main-content">
+                <h3>Folyamatábra küldése e-mailben</h3>
+                <div class="input-group">
+                    <div class="error-message" id="name-error"></div>
+                    <label for="name-input">Keresztnév:</label>
+                    <input type="text" id="name-input" placeholder="Add meg a keresztneved">
+                </div>
+                <div class="input-group">
+                    <div class="error-message" id="email-error"></div>
+                    <label for="email-input">E-mail cím:</label>
+                    <input type="email" id="email-input" placeholder="Add meg az e-mail címed">
+                </div>
+                <div class="checkbox-group">
+                    <div class="error-message" id="privacy-error"></div>
+                    <div class="checkbox-container">
+                        <input type="checkbox" id="privacy-checkbox">
+                        <label for="privacy-checkbox">
+                            Elfogadom az <a href="https://xflower.hu/adatkezeles" target="_blank" class="privacy-link">Adatkezelési Tájékoztatót</a>
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-buttons">
+                    <button class="primary-btn" id="send-button-modal">Küldés</button>
+                    <button class="secondary-btn" id="cancel-button-modal">Mégse</button>
+                </div>
+            </div>
+            
+            <div id="modal-loading" style="display: none;">
+                <div class="spinner"></div>
+                <p>E-mail küldése folyamatban...</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
